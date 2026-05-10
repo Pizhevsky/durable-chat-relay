@@ -1,0 +1,125 @@
+.toolbar-card {
+  --toolbar-padding-x: 1.25rem;
+  --toolbar-gap: 1.25rem;
+  --toolbar-column-total: 3.6;
+  --toolbar-first-column: 0.85;
+  --toolbar-first-two-columns: 1.9;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(230px, 0.85fr) minmax(360px, 1.05fr) minmax(560px, 1.7fr);
+  gap: var(--toolbar-gap);
+  align-items: start;
+  padding: 1.1rem var(--toolbar-padding-x);
+  margin-bottom: 1rem;
+}
+
+.toolbar-card::before,
+.toolbar-card::after {
+  position: absolute;
+  top: 1.25rem;
+  bottom: 1.25rem;
+  width: 1px;
+  background: #e1e7f0;
+  content: "";
+}
+
+.toolbar-card::before {
+  left: calc(
+    var(--toolbar-padding-x) +
+    (100% - (var(--toolbar-padding-x) * 2) - (var(--toolbar-gap) * 2)) *
+    var(--toolbar-first-column) / var(--toolbar-column-total) +
+    (var(--toolbar-gap) / 2)
+  );
+}
+
+.toolbar-card::after {
+  left: calc(
+    var(--toolbar-padding-x) +
+    (100% - (var(--toolbar-padding-x) * 2) - (var(--toolbar-gap) * 2)) *
+    var(--toolbar-first-two-columns) / var(--toolbar-column-total) +
+    (var(--toolbar-gap) * 1.5)
+  );
+}
+
+.toolbar-section {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.toolbar-section + .toolbar-section {
+  padding-left: 1.25rem;
+}
+
+.toolbar-section h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.toolbar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.toolbar-row button {
+  min-height: 2.6rem;
+  white-space: nowrap;
+}
+
+.group-chat-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.15fr) minmax(220px, 0.85fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.group-title-area {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.group-title-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.group-title-stack button {
+  white-space: nowrap;
+}
+
+.group-members-field {
+  align-self: start;
+}
+
+.group-members-field select[multiple] {
+  min-height: 6.6rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+@media (max-width: 1100px) {
+  .toolbar-card,
+  .toolbar-row,
+  .group-chat-layout,
+  .group-title-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-section + .toolbar-section {
+    border-top: 1px solid #e1e7f0;
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+
+  .toolbar-card::before,
+  .toolbar-card::after {
+    display: none;
+  }
+}

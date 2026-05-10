@@ -1,0 +1,50 @@
+{
+  "name": "durable-chat-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chat prototype for field teams with unreliable connectivity, built with Vue 3, TypeScript, Express, Socket.IO, SQLite, IndexedDB recovery and helper-node sync.",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts",
+    "dev:central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts",
+    "dev:helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite NODE_ID=helper-demo CENTRAL_URL=http://localhost:3000 tsx server/index.ts",
+    "dev:client": "parcel client/index.html --port 1234 --dist-dir dist/client --no-cache",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "parcel build client/index.html --dist-dir dist/client --public-url /",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/server/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite tsx server/index.ts",
+    "central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.0",
+    "cors": "^2.8.5",
+    "dexie": "^4.0.10",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "vue": "^3.5.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@parcel/transformer-vue": "^2.13.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.14.0",
+    "@types/web-push": "^3.6.4",
+    "concurrently": "^9.1.2",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^26.0.0",
+    "parcel": "^2.13.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.1",
+    "vue-tsc": "^2.2.8"
+  }
+}

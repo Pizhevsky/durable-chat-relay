@@ -1,0 +1,37 @@
+import 'dotenv/config'
+import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
+import type { AppConfig, NodeRole } from '../shared/types.js'
+import { defaultPortForRole, serverDefaults } from './defaults.js'
+
+function readRole(): NodeRole {
+  const role = process.env.NODE_ROLE ?? 'central'
+  if (role !== 'central' && role !== 'helper') {
+    throw new Error(`Unsupported NODE_ROLE: ${role}`)
+  }
+  return role
+}
+
+const nodeRole = readRole()
+
+export const serverConfig = {
+  nodeRole,
+  nodeId: process.env.NODE_ID ?? `${nodeRole}-${randomUUID().slice(0, 8)}`,
+  port: Number(process.env.PORT ?? defaultPortForRole(nodeRole)),
+  databasePath: resolve(process.env.DATABASE_PATH ?? `./data/${nodeRole}.sqlite`),
+  centralUrl: process.env.CENTRAL_URL,
+  helperSyncIntervalMs: Number(process.env.HELPER_SYNC_INTERVAL_MS ?? serverDefaults.helperSyncIntervalMs),
+  helperSyncMaxBackoffMs: Number(process.env.HELPER_SYNC_MAX_BACKOFF_MS ?? serverDefaults.helperSyncMaxBackoffMs),
+  vapidSubject: process.env.VAPID_SUBJECT,
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY
+}
+
+export function publicConfig(): AppConfig {
+  return {
+    nodeRole: serverConfig.nodeRole,
+    nodeId: serverConfig.nodeId,
+    centralUrl: serverConfig.centralUrl,
+    vapidPublicKey: serverConfig.vapidPublicKey
+  }
+}

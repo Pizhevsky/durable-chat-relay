@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest'
+import Database from 'better-sqlite3'
+import { initialiseSchema, seedDemoUsers } from '../../server/db/schema'
+import { ChatEventService } from '../../server/services/ChatEventService'
+import type { ChatEvent } from '../../shared/types'
+
+function createService(role: 'central' | 'helper' = 'central') {
+  const db = new Database(':memory:')
+  initialiseSchema(db)
+  seedDemoUsers(db)
+  return new ChatEventService(db, role)
+}
+
+function baseEvent(overrides: Partial<ChatEvent> = {}): ChatEvent {
+  return {
+    eventId: `device-a:${crypto.randomUUID()}`,
+    originNodeId: 'browser-a',
+    originDeviceId: 'device-a',
+    actorUserId: 'u-denis',
+    chatId: 'chat-1',
+    type: 'chat.created',
+    payload: {
+      chatId: 'chat-1',
+      clientChatId: 'chat-1',
+      type: 'direct',
+      memberIds: ['u-denis', 'u-anna']
+    },
+    createdAt: new Date().toISOString(),
+    logicalClock: 1,
+    syncStatus: 'local',
+    ...overrides
+  }
+}
+
+describe('ChatEventService', () => {
+  it('applies chat.created idempotently', () => {
+    const service = createService()
+    const event = baseEvent()
+
+    expect(service.applyEvent(event).inserted).toBe(true)
+    expect(service.applyEvent(event).inserted).toBe(false)
+    expect(service.listChats('u-denis')).toHaveLength(1)
+  })
+
+  it('prevents duplicate direct chats with a canonical pair key', () => {
+    const service = createService()
+    service.applyEvent(baseEvent())
+
+    expect(service.listChats('u-denis')[0].directPairKey).toBe('u-anna:u-denis')
+    const duplicateResult = service.applyEvent(baseEvent({
+      eventId: 'device-b:duplicate-direct',
+      originDeviceId: 'device-b',
+      actorUserId: 'u-anna',
+      chatId: 'chat-duplicate',
+      payload: {
+        chatId: 'chat-duplicate',
+        clientChatId: 'chat-duplicate',
+        type: 'direct',
+        memberIds: ['u-anna', 'u-denis']
+      }
+    }))
+
+    expect(duplicateResult.inserted).toBe(false)
+    expect(duplicateResult.event.chatId).toBe('chat-1')
+    expect(service.listChats('u-denis')).toHaveLength(1)
+  })
+
+  it('knows whether two users share an active chat for peer signaling', () => {
+    const service = createService()
+    service.applyEvent(baseEvent())
+
+    expect(service.usersShareActiveChat('u-denis', 'u-anna')).toBe(true)
+    expect(service.usersShareActiveChat('u-denis', 'u-mark')).toBe(false)
+    expect(service.usersShareActiveChat('u-denis', 'u-denis')).toBe(false)
+  })
+
+  it('stores message events and tracks sender read state', () => {
+    const service = createService()
+    service.applyEvent(baseEvent())
+
+    service.applyEvent(baseEvent({
+      eventId: 'device-a:message-1',
+      type: 'message.created',
+      payload: {
+        messageId: 'msg-1',
+        clientMessageId: 'msg-1',
+        chatId: 'chat-1',
+        text: 'Hello from the field office'
+      },
+      logicalClock: 2
+    }))
+
+    const messages = service.listMessages('chat-1', 'u-denis')
+    expect(messages).toHaveLength(1)
+    expect(messages[0].readBy).toContain('u-denis')
+    expect(service.listChats('u-anna')[0].unreadCount).toBe(1)
+  })
+
+  it('enforces owner-only group member changes', () => {
+    const service = createService()
+    service.applyEvent(baseEvent({
+      chatId: 'group-1',
+      payload: {
+        chatId: 'group-1',
+        clientChatId: 'group-1',
+        type: 'group',
+        title: 'Outage group',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    }))
+
+    expect(() => service.applyEvent(baseEvent({
+      eventId: 'device-b:add-1',
+      originDeviceId: 'device-b',
+      actorUserId: 'u-anna',
+      chatId: 'group-1',
+      type: 'member.added',
+      payload: { chatId: 'group-1', memberId: 'u-mark' }
+    }))).toThrow(/Only the group owner/)
+  })
+
+  it('marks helper events as helper-synced until central confirms them', () => {
+    const service = createService('helper')
+    const result = service.applyEvent(baseEvent())
+    expect(result.event.syncStatus).toBe('helper-synced')
+    expect(service.getPendingCentralSync()).toHaveLength(1)
+
+    service.markCentralSynced([result.event.eventId])
+    expect(service.getPendingCentralSync()).toHaveLength(0)
+  })
+
+  it('returns projection conflicts without crashing a sync batch', () => {
+    const service = createService()
+    const good = baseEvent({ eventId: 'device-a:good-chat' })
+    const bad = baseEvent({
+      eventId: 'device-a:bad-member',
+      chatId: 'missing-chat',
+      type: 'member.added',
+      payload: { chatId: 'missing-chat', memberId: 'u-anna' }
+    })
+
+    const result = service.applyEvents([good, bad])
+
+    expect(result.accepted).toContain(good.eventId)
+    expect(result.conflicts).toContain(bad.eventId)
+    expect(service.listChats('u-denis')).toHaveLength(1)
+  })
+
+  it('stores and updates helper pull-sync cursors', () => {
+    const service = createService('helper')
+    expect(service.getSyncCursor('central:sequence')).toBe(0)
+    service.setSyncCursor('central:sequence', 42)
+    expect(service.getSyncCursor('central:sequence')).toBe(42)
+  })
+})

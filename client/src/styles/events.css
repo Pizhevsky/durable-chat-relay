@@ -1,0 +1,72 @@
+.recent-events {
+  padding-top: 0.5rem;
+}
+
+.event-log {
+  border: solid #e1e7f0;
+  border-width: 1px 0 1px 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 0;
+  scrollbar-color: #9bbcff #eef2f7;
+  scrollbar-width: thin;
+}
+
+.event-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.event-log::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #eef2f7;
+}
+
+.event-log::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #9bbcff;
+}
+
+.event-log-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding-bottom: .5rem;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.event-log-header h3 {
+  margin: 0;
+}
+
+.event-log-header span {
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  background: #eef2f7;
+  color: #69758b;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.event-row {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.6rem;
+  border-radius: 14px;
+  background: #f6f8fc;
+  margin-bottom: 0.5rem;
+}
+
+.event-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  color: #69758b;
+}
+
+.event-row span,
+.event-row small {
+  color: #69758b;
+  overflow-wrap: anywhere;
+}

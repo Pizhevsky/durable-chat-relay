@@ -1,0 +1,16 @@
+services:
+  helper:
+    build: .
+    environment:
+      NODE_ROLE: helper
+      NODE_ID: field-area-helper
+      PORT: 3001
+      DATABASE_PATH: /data/helper.sqlite
+      CENTRAL_URL: http://host.docker.internal:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - helper-data:/data
+
+volumes:
+  helper-data:
