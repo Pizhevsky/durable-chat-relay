@@ -54,6 +54,11 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       connectedSocket?.leave(chatId)
     }
   }
+  function leaveSocketChatRooms(socket: Socket): void {
+    for (const room of socket.rooms) {
+      if (room !== socket.id) socket.leave(room)
+    }
+  }
 
   function joinActiveMembers(chatId: string): void {
     for (const memberId of service.getActiveMemberIds(chatId)) {
@@ -158,6 +163,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       const previousSession = sessions.get(socket.id)
       if (previousSession?.userId && previousSession.userId !== userId) {
         removeUserSocket(previousSession.userId, socket.id)
+        leaveSocketChatRooms(socket)
       }
 
       sessions.set(socket.id, {

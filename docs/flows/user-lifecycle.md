@@ -23,16 +23,19 @@ Expected UI:
 
 1. User selects a different demo user.
 2. Current user id is stored in `localStorage`.
-3. Socket reconnects or sends a new `client:hello`.
-4. Server joins the socket to that user's active chat rooms.
-5. Server recalculates that user's peer directory.
-6. App refreshes chat list and active messages for the new user.
-7. Peer targets are recalculated from the server peer directory and the new user's active chat members.
+3. Browser peer connections are reset so the old user's WebRTC graph is not reused.
+4. Socket sends a new `client:hello` for the selected user.
+5. Server removes the socket from the old user's socket map and chat rooms.
+6. Server joins the socket to the new user's active chat rooms.
+7. Server recalculates that user's peer directory.
+8. App refreshes chat list and active messages for the new user.
+9. Peer targets are recalculated from the server peer directory and the new user's active chat members.
 
 Important:
 
 - this is demo user switching, not real authentication
 - a production app must replace it with real auth/session identity
+- user switching must reset peer state, otherwise a browser window that was Kate can keep stale peer links after it becomes Ivan
 
 ## Refresh
 

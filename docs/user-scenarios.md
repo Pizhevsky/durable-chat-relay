@@ -139,6 +139,17 @@ Prepared peer-directory case:
 5. Because the central/helper server had already shared a peer directory, Kate can target Denis directly if their peer link is open, or the event can travel through a valid shared-chat peer who is also a member of that event chat.
 6. Without this peer directory, WebRTC fallback would depend too much on the chat each user happened to open before the outage.
 
+Prepared peer-directory case with demo user switching:
+
+1. Denis opens Anna, then switches to local-only mode.
+2. Anna opens Kate, then switches to local-only mode.
+3. The Kate browser window is changed to Ivan.
+4. The app clears the old Kate peer state, sends a fresh `client:hello` for Ivan, leaves Kate's socket rooms, loads Ivan's chats, and receives Ivan's peer directory.
+5. Anna sends a message to a group where Denis and Ivan are members.
+6. Denis and Ivan can both be targetable peers because the directory is rebuilt for the selected user, not for the old browser-window identity.
+
+This matters in the demo because one physical browser window can represent different users. A user switch must reset peer connections and rebuild peer targets, otherwise the old Kate peer graph can hide the new Ivan route.
+
 What WebRTC does not do:
 
 - it does not automatically discover closed browsers or unknown users

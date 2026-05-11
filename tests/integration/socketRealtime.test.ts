@@ -106,4 +106,103 @@ describe('Socket.IO realtime integration', () => {
       db.close()
     }
   })
+
+  it('rebuilds peer directory and signaling when a demo window changes selected user', async () => {
+    const { db, service } = createService()
+    service.applyEvent(chatCreated({
+      chatId: 'chat-denis-anna',
+      actorUserId: 'u-denis',
+      payload: {
+        chatId: 'chat-denis-anna',
+        clientChatId: 'chat-denis-anna',
+        type: 'direct',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    }))
+    service.applyEvent(chatCreated({
+      chatId: 'chat-anna-kate',
+      actorUserId: 'u-anna',
+      payload: {
+        chatId: 'chat-anna-kate',
+        clientChatId: 'chat-anna-kate',
+        type: 'direct',
+        memberIds: ['u-anna', 'u-kate']
+      }
+    }))
+    service.applyEvent(chatCreated({
+      chatId: 'chat-field-team',
+      actorUserId: 'u-anna',
+      payload: {
+        chatId: 'chat-field-team',
+        clientChatId: 'chat-field-team',
+        type: 'group',
+        title: 'Field team',
+        memberIds: ['u-anna', 'u-denis', 'u-ivan']
+      }
+    }))
+
+    const httpServer = createServer()
+    const ioServer = new Server(httpServer, { cors: { origin: '*' } })
+    registerSocketHandlers(ioServer, service)
+    const port = await listen(httpServer)
+    const baseUrl = `http://127.0.0.1:${port}`
+    const denis = createSocketClient(baseUrl, { transports: ['websocket'] })
+    const anna = createSocketClient(baseUrl, { transports: ['websocket'] })
+    const kateWindow = createSocketClient(baseUrl, { transports: ['websocket'] })
+
+    try {
+      await Promise.all([
+        waitForSocketEvent(denis, 'connect'),
+        waitForSocketEvent(anna, 'connect'),
+        waitForSocketEvent(kateWindow, 'connect')
+      ])
+
+      denis.emit('client:hello', { userId: 'u-denis', deviceId: 'device-denis' })
+      anna.emit('client:hello', { userId: 'u-anna', deviceId: 'device-anna' })
+      kateWindow.emit('client:hello', { userId: 'u-kate', deviceId: 'device-kate-window' })
+      await Promise.all([
+        waitForSocketEvent(denis, 'chat:list'),
+        waitForSocketEvent(anna, 'chat:list'),
+        waitForSocketEvent(kateWindow, 'chat:list')
+      ])
+
+      denis.emit('client:mode', { localOnly: true })
+      anna.emit('client:mode', { localOnly: true })
+
+      const annaDirectoryAfterIvan = waitForSocketEvent<PeerDirectorySnapshot>(anna, 'peer:directory')
+      kateWindow.emit('client:hello', { userId: 'u-ivan', deviceId: 'device-kate-window' })
+      const ivanChats = await waitForSocketEvent<Array<{ id: string }>>(kateWindow, 'chat:list')
+      expect(ivanChats.map((chat) => chat.id)).toContain('chat-field-team')
+      expect(ivanChats.map((chat) => chat.id)).not.toContain('chat-anna-kate')
+
+      let directory = await annaDirectoryAfterIvan
+      if (!directory.peers.some((peer) => peer.userId === 'u-ivan')) {
+        directory = await waitForSocketEvent<PeerDirectorySnapshot>(anna, 'peer:directory')
+      }
+      expect(directory.peers).toContainEqual(expect.objectContaining({ userId: 'u-denis', isLocalOnly: true }))
+      expect(directory.peers).toContainEqual(expect.objectContaining({ userId: 'u-ivan' }))
+      expect(directory.peers.some((peer) => peer.userId === 'u-kate')).toBe(false)
+
+      const signalToIvan = waitForSocketEvent(kateWindow, 'peer:signal')
+      anna.emit('peer:signal', {
+        toUserId: 'u-ivan',
+        signal: { type: 'offer', sdp: { type: 'offer', sdp: 'fake-offer-for-ivan' } }
+      })
+      await expect(signalToIvan).resolves.toMatchObject({ fromUserId: 'u-anna' })
+
+      anna.emit('peer:signal', {
+        toUserId: 'u-kate',
+        signal: { type: 'offer', sdp: { type: 'offer', sdp: 'stale-kate-offer' } }
+      })
+      await expectNoSocketEvent(kateWindow, 'peer:signal')
+    } finally {
+      denis.close()
+      anna.close()
+      kateWindow.close()
+      await ioServer.close()
+      await closeServer(httpServer)
+      db.close()
+    }
+  })
+
 })

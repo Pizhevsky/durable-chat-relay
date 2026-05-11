@@ -180,6 +180,9 @@ export function useDurableChatApp() {
   }
 
   async function changeUser(userId: string): Promise<void> {
+    if (state.currentUserId.value === userId) return
+
+    peerReplication?.resetForUserChange()
     state.setCurrentUser(userId)
     socket.reconnectUser()
     await persistence.refreshChats()

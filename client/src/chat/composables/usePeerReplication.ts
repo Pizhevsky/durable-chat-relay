@@ -69,7 +69,7 @@ export function usePeerReplication({
     }
   })
 
-  function syncTargets(): void {
+  function currentPeerTargetIds(): UserId[] {
     const directoryPeerIds = state.peerDirectory.value
       .filter((peer) => peer.isOnline)
       .map((peer) => peer.userId)
@@ -80,9 +80,11 @@ export function usePeerReplication({
         .map((member) => member.userId)
     )
 
-    peerMesh.updatePeers(uniqueUserIds(
-      directoryPeerIds.length > 0 ? directoryPeerIds : fallbackChatMemberIds
-    ))
+    return uniqueUserIds(directoryPeerIds.length > 0 ? directoryPeerIds : fallbackChatMemberIds)
+  }
+
+  function syncTargets(): void {
+    peerMesh.updatePeers(currentPeerTargetIds())
   }
 
   function publishEvent(event: AppliedChatEvent): void {
@@ -91,7 +93,17 @@ export function usePeerReplication({
   }
 
   function handleSignal(message: PeerSignalMessage): Promise<void> {
+    if (!currentPeerTargetIds().includes(message.fromUserId)) return Promise.resolve()
     return peerMesh.handleSignal(message)
+  }
+
+  function resetForUserChange(): void {
+    peerMesh.close()
+    state.setPeerDirectory([])
+    state.peerAckCount.value = 0
+    state.peerMissingSyncStatus.value = 'idle'
+    state.lastPeerEventType.value = 'none'
+    state.peerStatus.value = 'Peer fallback: rebuilding for selected user'
   }
 
   function close(): void {
@@ -115,6 +127,7 @@ export function usePeerReplication({
     syncTargets,
     publishEvent,
     handleSignal,
+    resetForUserChange,
     close
   }
 }

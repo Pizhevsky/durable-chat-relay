@@ -55,6 +55,8 @@ The directory includes online or local-only users who share an active chat with 
 
 The directory is still scoped by chat membership. It is not a global list of every online user, and it does not allow signaling to unrelated users.
 
+When a demo window changes selected user, the browser clears stale peer connections and the server removes the socket from the old user's chat rooms before joining the new user's rooms. This prevents a Kate peer graph from being reused after the same window becomes Ivan, which is important for group fallback scenarios where Anna needs to reach both Denis and Ivan while local-only.
+
 ## Why event log
 
 Rows alone are not enough for durable retry. The same message can arrive via the original browser, helper sync, peer replication or recovery dump.

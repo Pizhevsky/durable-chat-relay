@@ -52,6 +52,8 @@ The central/helper server broadcasts a peer directory to connected browsers. Eac
 
 This fixes an important outage case: if Denis has prepared a peer link with Anna, Anna later prepares one with Kate, and Kate sends a group message that includes Denis, Kate should already know Denis as a targetable shared-chat peer if both were connected while the directory was available. Without the directory, the peer graph could depend too much on whichever chat each user happened to open.
 
+The directory must also survive demo user switching correctly. If a browser window was Kate and is changed to Ivan, the old peer state is cleared, the socket announces Ivan with a fresh `client:hello`, and new Ivan targets are prepared. This avoids a bug where Anna could still reach Denis in local-only mode, but Ivan missed the group message because the browser retained Kate-oriented peer state.
+
 ## Mesh Protocol
 
 Each browser maintains a local event log and a list of known peers. Events are
