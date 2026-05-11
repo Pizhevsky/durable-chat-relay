@@ -8,6 +8,8 @@ export type NodeId = string
 export type NodeRole = 'central' | 'helper'
 export type ChatType = 'direct' | 'group'
 
+export const RECOVERY_DUMP_FORMAT = 'durable-chat-recovery-v1' as const
+
 export type EventSyncStatus =
   | 'local'
   | 'peer-replicated'
@@ -139,7 +141,7 @@ export interface SyncPullResponse {
 }
 
 export interface RecoveryDump {
-  format: 'resilient-field-chat-recovery-v1'
+  format: typeof RECOVERY_DUMP_FORMAT
   exportedAt: string
   exportedBy: UserId
   deviceId: DeviceId

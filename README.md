@@ -14,7 +14,7 @@ separate persistence backend. This version keeps the useful idea behind that
 work, then rebuilds it as a clearer modern architecture.
 
 The aim is not to claim secure enterprise messaging. The aim is to show a
-practical resilient-chat design that can support normal central delivery,
+practical durable-chat design that can support normal central delivery,
 temporary helper nodes, browser-durable storage, recovery dumps, and
 peer-assisted fallback. The architecture is ready to be connected to real
 authentication and authorization, but this project currently uses demo user
@@ -37,6 +37,7 @@ Central unavailable, helper available
 No central and no helper
   Browser stores events in IndexedDB
   Already-signaled browsers can replicate events to known peers through WebRTC
+  Peer fallback is limited to already-signaled active chat members
 
 Recovery
   Browser/helper uploads event logs to central
@@ -62,7 +63,8 @@ Recovery
 - WebRTC data-channel event replication between already-signaled chat peers
 - Socket.IO peer signaling while central/helper connectivity is available
 - Helper sync push/pull with simple exponential backoff
-- Tests for persistence, idempotency, helper sync, IndexedDB, and retry flow
+- Tests for persistence, idempotency, helper sync, IndexedDB, peer routing,
+  notifications, and retry flow
 
 ## Quick Start
 
@@ -157,6 +159,11 @@ The fastest portfolio demo is:
 
 The local-only flag is kept in `sessionStorage`, so a refreshed tab stays in
 local-only mode until **Reconnect this tab** is clicked.
+
+While local-only, another demo user's window receives the message before
+reconnect only if a real WebRTC peer channel is already open. Same-browser
+local tab broadcasting is scoped to the same selected demo user and is not used
+as a cross-user delivery shortcut.
 
 For the full script, including duplicate direct-chat prevention, notifications,
 recovery dumps, helper-node sync, and WebRTC visibility, see

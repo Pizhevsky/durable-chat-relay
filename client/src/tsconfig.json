@@ -1,4 +1,7 @@
 {
   "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": []
+  },
   "include": ["../../env.d.ts", "**/*.d.ts", "**/*.ts", "**/*.vue", "../../shared/**/*.ts"]
 }

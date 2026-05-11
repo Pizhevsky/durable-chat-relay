@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import type { ChatApp } from '../chat/composables/useChatApp'
+import { clientConfig } from '../config/clientConfig'
 
 defineProps<{
   app: ChatApp
 }>()
+
+function shortDeviceId(deviceId: string): string {
+  const length = clientConfig.deviceIdPreviewLength
+  return deviceId.length > length ? `${deviceId.slice(0, length)}...` : deviceId
+}
 </script>
 
 <template>
@@ -14,7 +20,7 @@ defineProps<{
         Keep chatting through unreliable connectivity.
       </h1>
       <p class="hero-copy">
-        A resilient chat prototype for field teams working with unreliable connectivity. 
+        A durable chat prototype for field teams working with unreliable connectivity. 
         Every action is saved before delivery, so messages and chats can survive browser 
         refreshes, local-only mode, helper-node sync, and later central reconciliation. 
         Create a direct or group chat and watch each event move from browser storage to 
@@ -26,7 +32,7 @@ defineProps<{
         <h2>Transport</h2>
         <span class="status-pill">{{ app.connectionLabel.value }}</span>
         <span>Pending local events: <strong>{{ app.pendingCount.value }}</strong></span>
-        <span>Demo local-only: <strong>{{ app.demoLocalOnly.value ? 'on' : 'off' }}</strong></span>
+        <span>Demo local-only: <strong>{{ app.demo.localOnly.value ? 'on' : 'off' }}</strong></span>
       </div>
 
       <div class="status-group peer-status-grid">
@@ -41,7 +47,7 @@ defineProps<{
         <h2>Browser node</h2>
         <span>Notifications: <strong>{{ app.notificationPermission.value }}</strong></span>
         <span>Node: <strong>{{ app.nodeId() }}</strong></span>
-        <span class="device">{{ app.deviceId }}</span>
+        <span class="device" :title="app.deviceId">{{ shortDeviceId(app.deviceId) }}</span>
       </div>
     </div>
   </section>

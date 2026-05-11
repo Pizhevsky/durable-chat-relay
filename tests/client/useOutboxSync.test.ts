@@ -2,47 +2,8 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useOutboxSync } from '../../client/src/chat/composables/useOutboxSync'
 import { localDb, pendingEvents, saveLocalEvent } from '../../client/src/storage/localDb'
-import type { ChatEvent, ChatId } from '../../shared/types'
-
-function messageEvent(chatId: ChatId = 'chat-test'): ChatEvent {
-  return {
-    eventId: `browser-test:${crypto.randomUUID()}`,
-    originNodeId: 'browser-test',
-    originDeviceId: 'browser-test',
-    actorUserId: 'u-denis',
-    chatId,
-    type: 'message.created',
-    payload: {
-      messageId: 'msg-test',
-      clientMessageId: 'msg-test',
-      chatId,
-      text: 'Retry after reconnect'
-    },
-    createdAt: new Date().toISOString(),
-    logicalClock: 1,
-    syncStatus: 'local'
-  }
-}
-
-function chatCreatedEvent(chatId: ChatId): ChatEvent {
-  return {
-    eventId: `browser-test:${crypto.randomUUID()}`,
-    originNodeId: 'browser-test',
-    originDeviceId: 'browser-test',
-    actorUserId: 'u-denis',
-    chatId,
-    type: 'chat.created',
-    payload: {
-      chatId,
-      clientChatId: chatId,
-      type: 'direct',
-      memberIds: ['u-denis', 'u-anna']
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    logicalClock: 1,
-    syncStatus: 'local'
-  }
-}
+import type { ChatEvent, SyncResponse } from '../../shared/types'
+import { chatCreatedEvent, messageCreatedEvent } from '../helpers/chatEvents'
 
 describe('useOutboxSync', () => {
   beforeEach(async () => {
@@ -51,7 +12,7 @@ describe('useOutboxSync', () => {
   })
 
   it('flushes a failed local event after connectivity returns', async () => {
-    const item = messageEvent()
+    const item = messageCreatedEvent()
     await saveLocalEvent(item)
 
     const publishOnline = vi.fn()
@@ -59,7 +20,9 @@ describe('useOutboxSync', () => {
       .mockResolvedValueOnce({ ...item, syncStatus: 'central-synced' })
 
     const outbox = useOutboxSync({
+      getUserId: () => 'u-denis',
       publishOnline,
+      syncReplicated: vi.fn(),
       onEventConfirmed: vi.fn(),
       onPendingCount: vi.fn()
     })
@@ -73,8 +36,8 @@ describe('useOutboxSync', () => {
   })
 
   it('uses stored direct-chat remap before retrying later pending events', async () => {
-    const localChat = chatCreatedEvent('chat-local')
-    const localMessage = messageEvent('chat-local')
+    const localChat = chatCreatedEvent({ chatId: 'chat-local' })
+    const localMessage = messageCreatedEvent({ chatId: 'chat-local', payload: { chatId: 'chat-local' } })
     const acceptedChat = {
       ...localChat,
       chatId: 'chat-central',
@@ -97,7 +60,9 @@ describe('useOutboxSync', () => {
       }))
 
     const outbox = useOutboxSync({
+      getUserId: () => 'u-denis',
       publishOnline,
+      syncReplicated: vi.fn(),
       onEventConfirmed: vi.fn(async (confirmed, original) => {
         if (original.eventId !== localChat.eventId) return undefined
         return {
@@ -121,5 +86,156 @@ describe('useOutboxSync', () => {
       'chat-central',
       'chat-central'
     ])
+  })
+
+  it('does not retry another demo user event from the shared browser outbox', async () => {
+    const denisMessage = messageCreatedEvent({
+      chatId: 'chat-group',
+      actorUserId: 'u-denis',
+      payload: { chatId: 'chat-group' }
+    })
+    const ivanMessage = messageCreatedEvent({
+      chatId: 'chat-group',
+      actorUserId: 'u-ivan',
+      payload: { chatId: 'chat-group' }
+    })
+    await saveLocalEvent(denisMessage)
+    await saveLocalEvent(ivanMessage)
+
+    const pendingCount = vi.fn()
+    const publishOnline = vi.fn(async (eventToPublish: ChatEvent): Promise<ChatEvent> => ({
+      ...eventToPublish,
+      syncStatus: 'central-synced'
+    }))
+
+    const outbox = useOutboxSync({
+      getUserId: () => 'u-ivan',
+      publishOnline,
+      syncReplicated: vi.fn(),
+      onEventConfirmed: vi.fn(),
+      onPendingCount: pendingCount
+    })
+
+    await outbox.refreshPendingCount()
+    await outbox.retryPending()
+
+    expect(pendingCount).toHaveBeenCalledWith(1)
+    expect(publishOnline).toHaveBeenCalledTimes(1)
+    expect(publishOnline).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: 'u-ivan',
+      eventId: ivanMessage.eventId
+    }))
+    expect(await localDb.events.get(denisMessage.eventId)).toEqual(expect.objectContaining({
+      localStatus: 'pending',
+      actorUserId: 'u-denis'
+    }))
+  })
+
+  it('syncs peer-replicated events without rewriting original authorship', async () => {
+    const denisPeerMessage = {
+      ...messageCreatedEvent({
+        chatId: 'chat-group',
+        actorUserId: 'u-denis',
+        payload: { chatId: 'chat-group' }
+      }),
+      syncStatus: 'peer-replicated'
+    } as ChatEvent
+
+    await localDb.events.put({
+      ...denisPeerMessage,
+      localStatus: 'peer-replicated',
+      retryCount: 0,
+      updatedAt: denisPeerMessage.createdAt
+    })
+
+    const publishOnline = vi.fn()
+    const syncReplicated = vi.fn(async (events: ChatEvent[]): Promise<SyncResponse> => ({
+      accepted: events.map((event) => event.eventId),
+      duplicates: [],
+      conflicts: [],
+      serverEvents: events.map((event) => ({
+        ...event,
+        syncStatus: 'central-synced'
+      })),
+      nodeRole: 'central' as const,
+      nodeId: 'central-demo'
+    }))
+
+    const outbox = useOutboxSync({
+      getUserId: () => 'u-ivan',
+      publishOnline,
+      syncReplicated,
+      onEventConfirmed: vi.fn(),
+      onPendingCount: vi.fn()
+    })
+
+    await outbox.retryPending()
+
+    expect(publishOnline).not.toHaveBeenCalled()
+    expect(syncReplicated).toHaveBeenCalledWith([
+      expect.objectContaining({
+        actorUserId: 'u-denis',
+        eventId: denisPeerMessage.eventId
+      })
+    ])
+    expect(await localDb.events.get(denisPeerMessage.eventId)).toEqual(expect.objectContaining({
+      actorUserId: 'u-denis',
+      localStatus: 'sent-to-central'
+    }))
+  })
+
+  it('syncs helper-synced events authored by other users', async () => {
+    const denisHelperMessage = {
+      ...messageCreatedEvent({
+        eventId: 'browser-test:helper-denis',
+        chatId: 'chat-group',
+        actorUserId: 'u-denis',
+        payload: { chatId: 'chat-group' }
+      }),
+      syncStatus: 'helper-synced'
+    } as ChatEvent
+
+    await localDb.events.put({
+      ...denisHelperMessage,
+      localStatus: 'sent-to-helper',
+      retryCount: 0,
+      updatedAt: denisHelperMessage.createdAt
+    })
+
+    const publishOnline = vi.fn()
+    const syncReplicated = vi.fn(async (events: ChatEvent[]): Promise<SyncResponse> => ({
+      accepted: events.map((event) => event.eventId),
+      duplicates: [],
+      conflicts: [],
+      serverEvents: events.map((event) => ({
+        ...event,
+        syncStatus: 'central-synced'
+      })),
+      nodeRole: 'central' as const,
+      nodeId: 'central-demo'
+    }))
+
+    const outbox = useOutboxSync({
+      getUserId: () => 'u-ivan',
+      publishOnline,
+      syncReplicated,
+      onEventConfirmed: vi.fn(),
+      onPendingCount: vi.fn()
+    })
+
+    await outbox.retryPending()
+
+    expect(publishOnline).not.toHaveBeenCalled()
+    expect(syncReplicated).toHaveBeenCalledWith([
+      expect.objectContaining({
+        actorUserId: 'u-denis',
+        eventId: denisHelperMessage.eventId,
+        localStatus: 'sent-to-helper'
+      })
+    ])
+    expect(await localDb.events.get(denisHelperMessage.eventId)).toEqual(expect.objectContaining({
+      actorUserId: 'u-denis',
+      localStatus: 'sent-to-central'
+    }))
   })
 })

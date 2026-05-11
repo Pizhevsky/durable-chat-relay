@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import type { ChatEvent } from '../../../../shared/types'
+import type { ChatEvent, SyncResponse } from '../../../../shared/types'
 import {
   cleanupSyncedEvents,
+  type LocalEventRecord,
   markEventFailed,
   markEventsSent,
   pendingEvents,
@@ -26,7 +27,9 @@ export interface OutboxSync {
 }
 
 interface OutboxSyncInput {
+  getUserId: () => string
   publishOnline: (event: ChatEvent) => Promise<ChatEvent>
+  syncReplicated: (events: ChatEvent[]) => Promise<SyncResponse>
   onEventConfirmed: (
     confirmed: ChatEvent,
     original: ChatEvent
@@ -58,24 +61,8 @@ export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
 
     try {
       const pending = await pendingEvents()
-      const chatRemaps = new Map<string, string>()
-      for (const pendingEvent of pending) {
-        const event = eventWithRemappedChat(pendingEvent, chatRemaps)
-        try {
-          const confirmed = await input.publishOnline(event)
-          const result = await input.onEventConfirmed(confirmed, event)
-          if (result?.remappedChat) {
-            await remapPendingChatEvents(
-              result.remappedChat.fromChatId,
-              result.remappedChat.toChatId
-            )
-            chatRemaps.set(result.remappedChat.fromChatId, result.remappedChat.toChatId)
-          }
-          await markConfirmedEventSent(pendingEvent.eventId, confirmed)
-        } catch (error: unknown) {
-          await markEventFailed(pendingEvent.eventId, errorMessage(error, 'Retry failed'))
-        }
-      }
+      await retryOwnEvents(ownPendingEvents(pending))
+      await syncReplicatedEvents(peerReplicatedEvents(pending))
     } finally {
       syncing.value = false
       await refreshPendingCount()
@@ -84,13 +71,75 @@ export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
 
   async function refreshPendingCount(): Promise<void> {
     const pending = await pendingEvents()
-    input.onPendingCount(pending.filter((event) => event.localStatus !== 'sent-to-central').length)
+    input.onPendingCount(pending.filter((event) =>
+      event.actorUserId === input.getUserId() &&
+      event.localStatus !== 'sent-to-central'
+    ).length)
   }
 
   async function markConfirmedEventSent(originalEventId: string, confirmed: ChatEvent): Promise<void> {
     const localStatus = confirmed.syncStatus === 'central-synced' ? 'sent-to-central' : 'sent-to-helper'
     await markEventsSent([originalEventId], localStatus)
     if (localStatus === 'sent-to-central') await cleanupSyncedEvents()
+  }
+
+  async function retryOwnEvents(events: ChatEvent[]): Promise<void> {
+    const chatRemaps = new Map<string, string>()
+
+    for (const pendingEvent of events) {
+      await retryOwnEvent(pendingEvent, chatRemaps)
+    }
+  }
+
+  async function retryOwnEvent(event: ChatEvent, chatRemaps: Map<string, string>): Promise<void> {
+    const eventToPublish = eventWithRemappedChat(event, chatRemaps)
+
+    try {
+      const confirmed = await input.publishOnline(eventToPublish)
+      const result = await input.onEventConfirmed(confirmed, eventToPublish)
+      if (result?.remappedChat) {
+        await remapPendingChatEvents(
+          result.remappedChat.fromChatId,
+          result.remappedChat.toChatId
+        )
+        chatRemaps.set(result.remappedChat.fromChatId, result.remappedChat.toChatId)
+      }
+      await markConfirmedEventSent(event.eventId, confirmed)
+    } catch (error: unknown) {
+      await markEventFailed(event.eventId, errorMessage(error, 'Retry failed'))
+    }
+  }
+
+  async function syncReplicatedEvents(events: ChatEvent[]): Promise<void> {
+    if (events.length === 0) return
+
+    try {
+      const result = await input.syncReplicated(events)
+      const syncedEventIds = [...result.accepted, ...result.duplicates]
+      if (syncedEventIds.length > 0) {
+        await markEventsSent(syncedEventIds, 'sent-to-central')
+        await cleanupSyncedEvents()
+      }
+
+      for (const eventId of result.conflicts) {
+        await markEventFailed(eventId, 'Peer-replicated event was rejected by central sync')
+      }
+    } catch (error: unknown) {
+      for (const event of events) {
+        await markEventFailed(event.eventId, errorMessage(error, 'Peer sync failed'))
+      }
+    }
+  }
+
+  function ownPendingEvents(events: LocalEventRecord[]): LocalEventRecord[] {
+    return events.filter((event) => event.actorUserId === input.getUserId())
+  }
+
+  function peerReplicatedEvents(events: LocalEventRecord[]): LocalEventRecord[] {
+    return events.filter((event) =>
+      event.actorUserId !== input.getUserId() &&
+      (event.localStatus === 'peer-replicated' || event.localStatus === 'sent-to-helper')
+    )
   }
 
   return {

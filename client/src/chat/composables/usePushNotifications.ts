@@ -1,5 +1,6 @@
 import { ref } from 'vue'
-import type { Message } from '../../../../shared/types'
+import type { Message, UserId } from '../../../../shared/types'
+import { clientConfig } from '../../config/clientConfig'
 
 const serviceWorkerUrl = new URL('../../../worker.js', import.meta.url)
 
@@ -9,6 +10,7 @@ interface ChatNotificationPayload {
   body: string
   chatId: string
   messageId?: string
+  userId?: UserId
 }
 
 interface InAppNotification {
@@ -51,19 +53,19 @@ export function usePushNotifications() {
     )
   }
 
-  async function showDemoNotification(): Promise<void> {
+  async function showNotificationPreview(): Promise<void> {
     await ensurePermission()
-    await showNotificationPayload({
+    await showSystemNotification({
       type: 'CHAT_NOTIFICATION',
-      title: 'Resilient chat notification test',
+      title: 'Durable chat notification test',
       body: 'This is how a hidden/offline field-office message appears.',
       chatId: 'demo-notification'
     })
     setNotificationStatus('Test notification was sent to the browser.')
   }
 
-  function notifyFromForeground(message: Message): void {
-    if (document.visibilityState === 'visible') {
+  function notifyFromForeground(message: Message, userId: UserId): void {
+    if (isFocusedTab()) {
       showInAppNotification({
         title: `Message from ${message.senderName}`,
         body: message.text,
@@ -74,12 +76,13 @@ export function usePushNotifications() {
 
     if (permission.value !== 'granted') return
 
-    showNotificationPayload({
+    showSystemNotification({
       type: 'CHAT_NOTIFICATION',
       title: `Message from ${message.senderName}`,
       body: message.text,
       chatId: message.chatId,
-      messageId: message.id
+      messageId: message.id,
+      userId
     }).catch(() => undefined)
   }
 
@@ -98,7 +101,7 @@ export function usePushNotifications() {
     notificationStatusTimer = setTimeout(() => {
       lastNotificationStatus.value = null
       notificationStatusTimer = null
-    }, 5000)
+    }, clientConfig.notifications.statusMessageMs)
   }
 
   function showInAppNotification(notification: InAppNotification): void {
@@ -107,7 +110,7 @@ export function usePushNotifications() {
     inAppNotificationTimer = setTimeout(() => {
       inAppNotification.value = null
       inAppNotificationTimer = null
-    }, 5000)
+    }, clientConfig.notifications.inAppMessageMs)
   }
 
   function close(): void {
@@ -117,20 +120,9 @@ export function usePushNotifications() {
     inAppNotificationTimer = null
   }
 
-  async function showNotificationPayload(payload: ChatNotificationPayload): Promise<void> {
-    if (!registration) registration = await navigator.serviceWorker.register(serviceWorkerUrl)
-    const controller =
-      navigator.serviceWorker.controller ??
-      registration.active ??
-      registration.waiting ??
-      registration.installing
-
-    if (controller) {
-      controller.postMessage(payload)
-      return
-    }
-
-    await registration.showNotification(payload.title, {
+  async function showSystemNotification(payload: ChatNotificationPayload): Promise<void> {
+    const nextRegistration = await readyRegistration()
+    await nextRegistration.showNotification(payload.title, {
       body: payload.body,
       tag: String(
         payload.messageId
@@ -139,9 +131,20 @@ export function usePushNotifications() {
       ),
       data: {
         chatId: payload.chatId,
-        messageId: payload.messageId
+        messageId: payload.messageId,
+        userId: payload.userId
       }
     })
+  }
+
+  async function readyRegistration(): Promise<ServiceWorkerRegistration> {
+    if (!registration) registration = await navigator.serviceWorker.register(serviceWorkerUrl)
+    registration = await navigator.serviceWorker.ready
+    return registration
+  }
+
+  function isFocusedTab(): boolean {
+    return document.visibilityState === 'visible' && document.hasFocus()
   }
 
   return {
@@ -150,7 +153,7 @@ export function usePushNotifications() {
     inAppNotification,
     initialise,
     requestPermission,
-    showDemoNotification,
+    showNotificationPreview,
     notifyFromForeground,
     getRegistration: () => registration,
     close

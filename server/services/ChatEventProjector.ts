@@ -105,11 +105,15 @@ export class ChatEventProjector {
       throw new AppError('Owners cannot remove themselves in this demo', 422, 'OWNER_CANNOT_LEAVE')
     }
 
-    this.db.prepare(`
+    const result = this.db.prepare(`
       UPDATE chat_members
       SET left_at = ?
       WHERE chat_id = ? AND user_id = ? AND is_owner = 0
     `).run(event.createdAt, event.payload.chatId, event.payload.memberId)
+
+    if (result.changes === 0) {
+      throw new AppError('Member not found or is the group owner', 404, 'MEMBER_NOT_FOUND')
+    }
   }
 
   private projectMessageCreated(event: ChatEvent<MessageCreatedPayload>): void {

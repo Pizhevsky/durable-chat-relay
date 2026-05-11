@@ -3,26 +3,26 @@ import { serverConfig } from '../../server/config'
 import type { ChatEventService } from '../../server/services/ChatEventService'
 import { startHelperSync } from '../../server/sync/helperSync'
 import type { ChatEvent, SyncPullResponse, SyncResponse } from '../../shared/types'
+import { chatCreatedEvent } from '../helpers/chatEvents'
 
 const originalConfig = { ...serverConfig }
 
 function event(overrides: Partial<ChatEvent> = {}): ChatEvent {
   return {
-    eventId: `device-a:${crypto.randomUUID()}`,
-    originNodeId: 'helper-demo',
-    originDeviceId: 'device-a',
-    actorUserId: 'u-denis',
-    chatId: 'chat-sync',
-    type: 'chat.created',
-    payload: {
+    ...chatCreatedEvent({
+      eventId: `device-a:${crypto.randomUUID()}`,
+      originNodeId: 'helper-demo',
+      originDeviceId: 'device-a',
+      actorUserId: 'u-denis',
       chatId: 'chat-sync',
-      clientChatId: 'chat-sync',
-      type: 'direct',
-      memberIds: ['u-denis', 'u-anna']
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    logicalClock: 1,
-    syncStatus: 'helper-synced',
+      payload: {
+        chatId: 'chat-sync',
+        clientChatId: 'chat-sync',
+        type: 'direct',
+        memberIds: ['u-denis', 'u-anna']
+      },
+      syncStatus: 'helper-synced'
+    }),
     ...overrides
   }
 }

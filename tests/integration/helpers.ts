@@ -5,6 +5,10 @@ import { initialiseSchema, seedDemoUsers } from '../../server/db/schema'
 import { ChatEventService } from '../../server/services/ChatEventService'
 import { serverConfig } from '../../server/config'
 import type { ChatEvent, ChatId, NodeRole, UserId } from '../../shared/types'
+import {
+  chatCreatedEvent,
+  messageCreatedEvent
+} from '../helpers/chatEvents'
 
 export const originalConfig = { ...serverConfig }
 
@@ -26,47 +30,39 @@ export function chatCreated(overrides: Partial<ChatEvent> = {}): ChatEvent {
     ['u-denis', 'u-anna']
   )
 
-  return {
+  return chatCreatedEvent({
     eventId: `device-test:${crypto.randomUUID()}`,
     originNodeId: 'browser-test',
     originDeviceId: 'device-test',
     actorUserId,
     chatId,
-    type: 'chat.created',
     payload: {
       chatId,
       clientChatId: chatId,
       type: 'direct',
       memberIds
     },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    logicalClock: 1,
-    syncStatus: 'local',
     ...overrides
-  }
+  }) as ChatEvent
 }
 
 export function messageCreated(
   chatId: ChatId,
   text = 'Hello from integration test'
 ): ChatEvent {
-  return {
+  return messageCreatedEvent({
     eventId: `device-test:${crypto.randomUUID()}`,
     originNodeId: 'browser-test',
     originDeviceId: 'device-test',
     actorUserId: 'u-denis',
     chatId,
-    type: 'message.created',
     payload: {
       messageId: `msg-${crypto.randomUUID()}`,
       clientMessageId: `msg-${crypto.randomUUID()}`,
       chatId,
       text
-    },
-    createdAt: '2026-01-01T00:00:01.000Z',
-    logicalClock: 2,
-    syncStatus: 'local'
-  }
+    }
+  }) as ChatEvent
 }
 
 export function waitForSocketEvent<T>(

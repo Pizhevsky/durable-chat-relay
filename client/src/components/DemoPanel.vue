@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ChatApp } from '../chat/composables/useChatApp'
+import { clientConfig } from '../config/clientConfig'
 
 const props = defineProps<{
   app: ChatApp
 }>()
 
 const demoUsers = computed(() =>
-  props.app.users.value.filter((user) => user.id !== props.app.currentUserId.value).slice(0, 3)
+  props.app.users.value
+    .filter((user) => user.id !== props.app.currentUserId.value)
+    .slice(0, clientConfig.demo.maxAlternateUserButtons)
 )
 
 const notificationButtonLabel = computed(() => {
@@ -31,7 +34,7 @@ const canRequestNotifications = computed(() => props.app.notificationPermission.
         Reconnect when ready to see the outbox flush, sync statuses update, and
         notifications behave like they would during an interrupted work session.
       </p>
-      <p v-if="app.demoLocalOnly.value" class="local-only-warning">
+      <p v-if="app.demo.localOnly.value" class="local-only-warning">
         Saved in this browser only. Other users may not see these messages until
         this tab reconnects or an already-established peer channel replicates them.
       </p>
@@ -44,7 +47,7 @@ const canRequestNotifications = computed(() => props.app.notificationPermission.
           :key="user.id"
           class="secondary"
           type="button"
-          @click="app.openDemoUser(user.id)"
+          @click="app.demo.openUserWindow(user.id)"
         >
           Open {{ user.name }} window
         </button>
@@ -53,14 +56,14 @@ const canRequestNotifications = computed(() => props.app.notificationPermission.
       <div class="demo-action-group">
         <h3>System</h3>
         <button
-          v-if="!app.demoLocalOnly.value"
+          v-if="!app.demo.localOnly.value"
           class="warning"
           type="button"
-          @click="app.enableDemoLocalOnly"
+          @click="app.demo.enableLocalOnly"
         >
           Simulate local-only tab
         </button>
-        <button v-else class="success" type="button" @click="app.disableDemoLocalOnly">Reconnect this tab</button>
+        <button v-else class="success" type="button" @click="app.demo.disableLocalOnly">Reconnect this tab</button>
         <button
           class="secondary"
           :class="{ success: app.notificationPermission.value === 'granted' }"
@@ -70,7 +73,7 @@ const canRequestNotifications = computed(() => props.app.notificationPermission.
         >
           {{ notificationButtonLabel }}
         </button>
-        <button class="secondary" type="button" @click="app.showDemoNotification">Test notification</button>
+        <button class="secondary" type="button" @click="app.demo.showNotification">Test notification</button>
         <small v-if="app.notificationStatus.value" class="demo-action-note">{{ app.notificationStatus.value }}</small>
       </div>
     </div>

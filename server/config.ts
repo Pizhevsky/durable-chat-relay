@@ -14,14 +14,27 @@ function readRole(): NodeRole {
 
 const nodeRole = readRole()
 
+function readNumberEnv(name: string, fallback: number): number {
+  const rawValue = process.env[name]
+  if (!rawValue) return fallback
+
+  const value = Number(rawValue)
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a finite number`)
+  }
+  return value
+}
+
 export const serverConfig = {
   nodeRole,
-  nodeId: process.env.NODE_ID ?? `${nodeRole}-${randomUUID().slice(0, 8)}`,
-  port: Number(process.env.PORT ?? defaultPortForRole(nodeRole)),
+  nodeId: process.env.NODE_ID ?? `${nodeRole}-${randomUUID().slice(0, serverDefaults.nodeIdSuffixLength)}`,
+  port: readNumberEnv('PORT', defaultPortForRole(nodeRole)),
   databasePath: resolve(process.env.DATABASE_PATH ?? `./data/${nodeRole}.sqlite`),
   centralUrl: process.env.CENTRAL_URL,
-  helperSyncIntervalMs: Number(process.env.HELPER_SYNC_INTERVAL_MS ?? serverDefaults.helperSyncIntervalMs),
-  helperSyncMaxBackoffMs: Number(process.env.HELPER_SYNC_MAX_BACKOFF_MS ?? serverDefaults.helperSyncMaxBackoffMs),
+  helperSyncMinIntervalMs: readNumberEnv('HELPER_SYNC_MIN_INTERVAL_MS', serverDefaults.helperSyncMinIntervalMs),
+  helperSyncIntervalMs: readNumberEnv('HELPER_SYNC_INTERVAL_MS', serverDefaults.helperSyncIntervalMs),
+  helperSyncMaxBackoffMs: readNumberEnv('HELPER_SYNC_MAX_BACKOFF_MS', serverDefaults.helperSyncMaxBackoffMs),
+  helperSyncBatchSize: readNumberEnv('HELPER_SYNC_BATCH_SIZE', serverDefaults.helperSyncBatchSize),
   vapidSubject: process.env.VAPID_SUBJECT,
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY

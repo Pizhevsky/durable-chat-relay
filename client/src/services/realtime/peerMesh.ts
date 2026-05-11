@@ -1,5 +1,5 @@
 import type { ChatEvent, EventId, PeerSignalMessage, UserId } from '../../../../shared/types'
-import { createPeerConnectionState } from './peerConnections'
+import { closePeerConnection, createPeerConnectionState } from './peerConnections'
 import {
   encodePeerAck,
   encodePeerBatch,
@@ -9,14 +9,13 @@ import {
   parsePeerMessage
 } from './peerMessages'
 import { iceCandidate, sessionDescription, supportsWebRtc } from './peerSignals'
-import type { PeerConnectionState, PeerMesh, PeerMeshInput } from './peerTypes'
-
-const MAX_SEEN_EVENTS = 2_000
+import type { PeerConnectionState, PeerDataMessage, PeerMesh, PeerMeshInput } from './peerTypes'
+import { createSeenEventCache } from './seenEventCache'
+import { clientConfig } from '../../config/clientConfig'
 
 export function createPeerMesh(input: PeerMeshInput): PeerMesh {
   const peers = new Map<UserId, PeerConnectionState>()
-  const seenEvents = new Set<string>()
-  const seenEventOrder: string[] = []
+  const seenEvents = createSeenEventCache(clientConfig.peer.maxSeenEvents)
 
   function updatePeers(userIds: UserId[]): void {
     if (!supportsWebRtc()) return
@@ -27,7 +26,7 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
     for (const userId of nextPeerIds) ensurePeer(userId)
     for (const [userId, peer] of peers) {
       if (!nextPeerIds.has(userId)) {
-        closePeer(peer)
+        closePeerConnection(peer)
         peers.delete(userId)
       }
     }
@@ -65,24 +64,27 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
   }
 
   function publishEvent(event: ChatEvent, targetUserIds: UserId[]): void {
-    const targetUsers = new Set(targetUserIds)
-    if (targetUsers.size === 0) return
-    if (seenEvents.has(event.eventId)) return
-    rememberEvent(event.eventId)
-
-    const payload = encodePeerEvent(event)
-
-    for (const peer of peers.values()) {
-      if (!targetUsers.has(peer.userId)) continue
-      if (peer.channel?.readyState === 'open') peer.channel.send(payload)
+    if (targetUserIds.length === 0) {
+      input.onStatus?.('Peer fallback: no open peer channel')
+      return
     }
+    if (seenEvents.has(event.eventId)) return
+
+    const allowedPeers = new Set(targetUserIds)
+    const sentCount = sendEventToPeers(event, (peer) => allowedPeers.has(peer.userId))
+    if (sentCount > 0) seenEvents.remember(event.eventId)
+
+    input.onStatus?.(
+      sentCount > 0
+        ? `Peer fallback: sent to ${sentCount} peer${sentCount === 1 ? '' : 's'}`
+        : 'Peer fallback: no open peer channel'
+    )
   }
 
   function close(): void {
-    for (const peer of peers.values()) closePeer(peer)
+    for (const peer of peers.values()) closePeerConnection(peer)
     peers.clear()
     seenEvents.clear()
-    seenEventOrder.length = 0
   }
 
   function ensurePeer(userId: UserId): PeerConnectionState {
@@ -156,28 +158,28 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
       const data = parsePeerMessage(message.data)
       if (!data) return
 
-      if (data.deviceId) peer.deviceId = data.deviceId
+      if ('deviceId' in data) peer.deviceId = data.deviceId
 
-      if (data.type === 'event:new' && data.event) {
-        processPeerEvent(peer, data.event).catch(() => undefined)
-      }
+      handlePeerMessage(peer, data)
+    }
+  }
 
-      if (data.type === 'event:batch' && data.events) {
-        processPeerBatch(peer, data.events).catch(() => undefined)
-      }
-
-      if (data.type === 'event:summary' && data.eventIds) {
-        reconcilePeerSummary(peer, data.eventIds).catch(() => undefined)
-      }
-
-      if (data.type === 'event:request-missing' && data.eventIds) {
-        sendMissingEvents(peer, data.eventIds).catch(() => undefined)
-      }
-
-      if (data.type === 'event:ack' && data.eventId && data.deviceId) {
-        input.onStatus?.(`Peer ACK received: ${data.eventId}`)
-        input.onPeerAck?.(data.eventId, data.deviceId)
-      }
+  function handlePeerMessage(peer: PeerConnectionState, data: PeerDataMessage): void {
+    if (data.type === 'event:new' && data.event) {
+      processPeerEvent(peer, data.event).catch(() => undefined)
+    }
+    if (data.type === 'event:batch' && data.events) {
+      processPeerBatch(peer, data.events).catch(() => undefined)
+    }
+    if (data.type === 'event:summary' && data.eventIds) {
+      reconcilePeerSummary(peer, data.eventIds).catch(() => undefined)
+    }
+    if (data.type === 'event:request-missing' && data.eventIds) {
+      sendMissingEvents(peer, data.eventIds).catch(() => undefined)
+    }
+    if (data.type === 'event:ack' && data.eventId && data.deviceId) {
+      input.onStatus?.(`Peer ACK received: ${data.eventId}`)
+      input.onPeerAck?.(data.eventId, data.deviceId)
     }
   }
 
@@ -191,13 +193,33 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
       return
     }
 
-    rememberEvent(event.eventId)
+    seenEvents.remember(event.eventId)
     const accepted = await input.onEvent(event, peer.deviceId ?? peer.userId)
     if (accepted) {
       input.onPeerEvent?.(event)
       input.onStatus?.(`Last peer event: ${event.type}`)
       sendPeerAck(peer, event.eventId)
+      const allowedPeers = new Set(input.getTargetUserIds?.(event) ?? [])
+      sendEventToPeers(event, (nextPeer) => nextPeer.userId !== peer.userId && allowedPeers.has(nextPeer.userId))
     }
+  }
+
+  function sendEventToPeers(
+    event: ChatEvent,
+    canSend: (peer: PeerConnectionState) => boolean
+  ): number {
+    const payload = encodePeerEvent(event)
+    let sentCount = 0
+
+    for (const peer of peers.values()) {
+      if (!canSend(peer)) continue
+      if (peer.channel?.readyState === 'open') {
+        peer.channel.send(payload)
+        sentCount += 1
+      }
+    }
+
+    return sentCount
   }
 
   async function sendPeerSummary(peer: PeerConnectionState): Promise<void> {
@@ -236,39 +258,6 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
   function sendPeerAck(peer: PeerConnectionState, eventId: EventId): void {
     if (peer.channel?.readyState !== 'open') return
     peer.channel.send(encodePeerAck(eventId, input.deviceId))
-  }
-
-  function rememberEvent(eventId: EventId): void {
-    if (seenEvents.has(eventId)) return
-
-    seenEvents.add(eventId)
-    seenEventOrder.push(eventId)
-
-    while (seenEventOrder.length > MAX_SEEN_EVENTS) {
-      const oldestEventId = seenEventOrder.shift()
-      if (oldestEventId) seenEvents.delete(oldestEventId)
-    }
-  }
-
-  function closePeer(peer: PeerConnectionState): void {
-    if (peer.channel) {
-      peer.channel.onopen = null
-      peer.channel.onmessage = null
-      if (
-        typeof peer.channel.close === 'function' &&
-        (peer.channel.readyState === 'open' || peer.channel.readyState === 'connecting')
-      ) {
-        peer.channel.close()
-      }
-      peer.channel = undefined
-    }
-
-    peer.connection.ondatachannel = null
-    peer.connection.onicecandidate = null
-    peer.connection.onnegotiationneeded = null
-    peer.connection.onconnectionstatechange = null
-    peer.connection.close()
-    peer.pendingCandidates = []
   }
 
   return {

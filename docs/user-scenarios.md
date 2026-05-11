@@ -1,22 +1,55 @@
 # User Scenarios
 
-This document describes the app from the user experience side: what each person sees, what is saved, who receives messages, and what happens when the environment changes.
+This document describes the app from the user experience side: what each person
+sees, what is saved, who receives messages, and what happens when the
+environment changes.
 
 ## Actors
 
-The demo users are Denis, Anna, Mark, Kate and Ivan. Any user can open the app in a separate browser window. The selected current user is stored per URL/user selection.
+The demo users are Denis, Anna, Mark, Kate and Ivan. Any user can open the app
+in a separate browser window. Opened demo windows use a `?user=` URL parameter,
+and manual user switching is stored in `localStorage`.
+
+Same-user browser tabs can share applied events through a local
+`BroadcastChannel`. Different demo users do not use that channel as a delivery
+shortcut; cross-user local-only delivery must come from central/helper or an
+already-open WebRTC peer channel.
 
 ## Scenario Matrix
 
-| Environment | Sender experience | Receiver experience | Storage path | When everyone becomes consistent |
-|---|---|---|---|---|
-| Central online | Message sends and appears normally | Online chat members receive it immediately | Central SQLite event store plus browser cache | Immediately after server accepts the event |
-| Sender local-only, receivers online | Sender sees the message locally with pending state | Receivers do not receive it from central until sender reconnects; already-connected WebRTC peers may receive peer replication | Sender IndexedDB outbox; optionally peer IndexedDB | After sender reconnects and pending events sync |
-| Sender local-only, receivers offline | Sender sees saved local history | Receivers see nothing yet | Sender IndexedDB only | After sender opens app again and syncs to central/helper |
-| Helper available, central unavailable | User works through helper URL | Other helper-connected users receive messages | Helper SQLite, later central SQLite | After helper syncs with central |
-| Peer link already established | User can send while central/helper path is interrupted | Target chat members with open peer channels can receive replicated events | Browser IndexedDB on sender and peer | After any replicated browser syncs to central |
-| Browser refreshed or reopened | Cached chats/messages can reopen | No new data appears until transport returns | Browser IndexedDB cache/outbox | After central/helper/WebRTC sync catches up |
-| Recovery dump exported | User can preserve unsynced events in a JSON file | No automatic receiver change | Downloaded recovery file | After import into central/helper/browser and deduplication |
+Central online:
+Sender sends normally. Online chat members receive the message immediately.
+Central SQLite is the official store, with browser cache for reopening.
+
+Sender local-only, receivers online:
+Sender sees a pending local message. Central does not deliver it until
+reconnect; open WebRTC peers may receive it earlier. The event is stored in the
+sender IndexedDB and optionally in peer IndexedDB. Everyone becomes consistent
+after the sender or a peer syncs to central. If the receiver is connected to
+central when it accepts the peer event, it uploads the original sender's event
+immediately without changing authorship.
+
+Sender local-only, receivers offline:
+Sender sees saved local history. Receivers see nothing yet. The only copy is in
+sender IndexedDB until the sender reopens and syncs.
+
+Helper available, central unavailable:
+Users work through the helper URL. Helper-connected users receive messages
+through helper Socket.IO. Helper SQLite stores events until helper sync reaches
+central.
+
+Peer link already established:
+User can send while central/helper transport is interrupted. Chat members with
+open peer channels can receive replicated events. Sender and peer browsers store
+the event in IndexedDB until one of them syncs to central.
+
+Browser refreshed or reopened:
+Cached chats/messages can reopen. New data appears only after central, helper
+or WebRTC sync catches up.
+
+Recovery dump exported:
+User preserves unsynced events in JSON. Receivers do not change automatically;
+they become consistent after import and deduplication.
 
 ## Normal Central Chat
 
@@ -47,7 +80,9 @@ Expected UI:
 
 Important user expectation:
 
-Local saved means “safe on this browser,” not “delivered to everyone.” If Denis closes the browser before reconnecting, the only copy may be in Denis’ IndexedDB until he opens the app again.
+Local saved means “safe on this browser,” not “delivered to everyone.” If
+Denis closes the browser before reconnecting, the only copy may be in Denis'
+IndexedDB until he opens the app again.
 
 ## Closing While Local-Only
 
@@ -59,7 +94,8 @@ Local saved means “safe on this browser,” not “delivered to everyone.” I
 
 Browser limitation:
 
-Modern browsers usually show generic warning text, not the custom app message. The prompt still protects against accidental close.
+Modern browsers usually show generic warning text, not the custom app message.
+The prompt still protects against accidental close.
 
 ## Receiver Offline
 
@@ -80,10 +116,17 @@ If Denis was local-only instead, Anna still sees nothing until Denis syncs.
 5. The event is sent only to peers who are active members of that event’s chat.
 6. Anna validates that she knows the chat and is a member before saving the peer event.
 7. Anna ACKs the stored event over the data channel.
-8. When peers reconnect, they exchange event summaries and request missing event IDs.
-9. Missing events are sent back as batches.
-10. Anna can see the peer-replicated message before central sync.
-11. Later, Denis or Anna syncs the event to central, and central deduplicates by `eventId`.
+8. If Anna is connected to central/helper, she syncs Denis' original event.
+9. When peers reconnect, they exchange event summaries and request missing event IDs.
+10. Missing events are sent back as batches.
+11. Anna can see the peer-replicated message before Denis reconnects.
+12. Later, if Denis also syncs the same event, central deduplicates by `eventId`.
+
+Expected UI:
+
+- `Peer fallback: connected to Anna` means the data channel is open
+- `Peer fallback: sent to 1 peer` means the last local-only send used WebRTC
+- `Peer fallback: no open peer channel` means the message waits for later sync
 
 What WebRTC does not do:
 
@@ -131,7 +174,9 @@ The users end up with one direct chat, and pending messages follow the surviving
 
 Current limitation:
 
-Membership changes are centrally validated. Peer/local outage mode can carry events, but production-grade membership conflict rules would need stronger authorization and signed events.
+Membership changes are centrally validated. Peer/local outage mode can carry
+events, but production-grade membership conflict rules would need stronger
+authorization and signed events.
 
 ## Read Receipts
 
@@ -171,11 +216,15 @@ Limitations:
 
 Production caveat:
 
-This demo preserves event authorship for recovery. A production system would require signed events or stronger trust boundaries.
+This demo preserves event authorship for recovery. A production system would
+require signed events or stronger trust boundaries.
 
 ## Trust And Security Boundaries
 
-This project is a demo. It shows resilience mechanics, not secure enterprise messaging. The architecture can be connected to real authentication and authorization, but the current implementation uses demo user switching and demo-auth headers.
+This project is a demo. It shows resilience mechanics, not secure enterprise
+messaging. The architecture can be connected to real authentication and
+authorization, but the current implementation uses demo user switching and
+demo-auth headers.
 
 Current demo trust model:
 
@@ -199,7 +248,7 @@ Production requirements:
 |---|---|
 | “If I send while local-only, is it safe?” | It is safe in this browser’s IndexedDB. |
 | “Did everyone receive it?” | Only central/helper/peer-connected recipients. Offline users wait until sync. |
-| “Can I close the browser?” | The app warns you. Data stays local, but others may not see it until you reopen and sync. |
-| “Can WebRTC deliver to users who were never online?” | No. It needs already-established signaling/peer connection. |
-| “Can duplicate direct chats happen?” | Local duplicates can happen offline, but central remaps by canonical pair key during sync. |
+| “Can I close the browser?” | The app warns you. Others may not see local data until you reopen and sync. |
+| “Can WebRTC deliver to users who were never online?” | No. It needs already-established signaling. |
+| “Can duplicate direct chats happen?” | Local duplicates can happen offline, but central remaps by pair key. |
 | “What if central receives the same event twice?” | It stores one copy by `eventId`. |

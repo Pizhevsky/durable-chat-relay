@@ -50,13 +50,14 @@ Expected UI:
 2. Browser saves event in IndexedDB.
 3. Message appears locally with non-central status.
 4. If peer channel exists, browser can replicate to target chat peers.
-5. Event stays retryable until central/helper confirms it.
+5. A connected peer that accepts the event can upload it through `sync:events`.
+6. Event stays retryable until central/helper confirms it.
 
 Result:
 
 - sender can keep working
 - not connected receivers do not see it yet
-- central history updates only after a later sync
+- central history updates after sender sync or connected-peer relay
 
 ## Automatic Pending Retry
 
@@ -64,8 +65,10 @@ Result:
 2. Socket.IO connects or reconnects.
 3. App calls `retryPending()`.
 4. Events are sent in created-time order.
-5. Server accepts, deduplicates, or reports conflict.
-6. Browser updates local event status.
+5. Own events use `event:publish`; peer-replicated events use `sync:events`
+   so original authorship is preserved.
+6. Server accepts, deduplicates, or reports conflict.
+7. Browser updates local event status.
 
 Retryable local statuses:
 

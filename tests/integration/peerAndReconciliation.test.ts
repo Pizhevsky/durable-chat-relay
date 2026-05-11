@@ -22,7 +22,7 @@ describe('peer routing and direct-chat reconciliation integration', () => {
     vi.restoreAllMocks()
   })
 
-  it('sends peer-replicated events only to selected peer targets', () => {
+  it('sends peer-replicated events only to targeted connected peers', () => {
     const originalPeerConnection = globalThis.RTCPeerConnection
     const channels = new Map<UserId, FakeDataChannel>()
     installFakePeerConnection(['u-denis', 'u-mark'], channels)

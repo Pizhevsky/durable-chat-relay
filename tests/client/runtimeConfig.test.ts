@@ -18,12 +18,12 @@ describe('runtime API config', () => {
     window.history.pushState({}, '', `/?${clientConfig.apiOverrideQueryParam}=${helperApiOrigin}`)
 
     expect(apiOrigin()).toBe(helperApiOrigin)
-    expect(localStorage.getItem(clientConfig.apiOverrideStorageKey)).toBe(helperApiOrigin)
+    expect(localStorage.getItem(clientConfig.storageKeys.apiOverride)).toBe(helperApiOrigin)
     expect(apiUrl('/api/users')).toBe(`${helperApiOrigin}/api/users`)
   })
 
   it('uses the stored API override on later page loads', () => {
-    localStorage.setItem(clientConfig.apiOverrideStorageKey, helperApiOrigin)
+    localStorage.setItem(clientConfig.storageKeys.apiOverride, helperApiOrigin)
 
     expect(apiOrigin()).toBe(helperApiOrigin)
   })

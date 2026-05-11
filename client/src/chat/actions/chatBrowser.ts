@@ -1,4 +1,4 @@
-import type { ChatId, UserId } from '../../../../shared/types'
+import type { ChatId } from '../../../../shared/types'
 import type { ChatState } from '../composables/useChatState'
 import { errorMessage } from '../errorMessage'
 
@@ -12,7 +12,6 @@ export interface ChatBrowserActions {
   close: () => void
   openChatFromUrlIfPossible: () => void
   updateChatQueryParam: (chatId: ChatId) => void
-  openDemoUser: (userId: UserId) => void
 }
 
 interface ChatBrowserActionsInput {
@@ -57,24 +56,11 @@ export function createChatBrowserActions(input: ChatBrowserActionsInput): ChatBr
     history.replaceState({}, '', url)
   }
 
-  function openDemoUser(userId: UserId): void {
-    const url = new URL(window.location.href)
-    url.searchParams.set('user', userId)
-    const activeChat = state.activeChat.value
-    if (activeChat?.members.some((member) => member.userId === userId)) {
-      url.searchParams.set('chat', activeChat.id)
-    } else {
-      url.searchParams.delete('chat')
-    }
-    window.open(url.toString(), `field-chat-${userId}`, 'width=1100,height=850')
-  }
-
   return {
     bindServiceWorkerMessages,
     close,
     openChatFromUrlIfPossible,
-    updateChatQueryParam,
-    openDemoUser
+    updateChatQueryParam
   }
 }
 

@@ -15,6 +15,23 @@ export function peerTargetUserIds(chats: ChatSummary[], currentUserId: UserId, e
   return uniqueUserIds(memberIds).filter((userId) => userId !== currentUserId)
 }
 
+export function peerTargetUserIdsFromEvents(
+  chats: ChatSummary[],
+  currentUserId: UserId,
+  event: ChatEvent,
+  events: ChatEvent[]
+): UserId[] {
+  const directTargets = peerTargetUserIds(chats, currentUserId, event)
+  if (directTargets.length > 0) return directTargets
+
+  const chatCreated = events.find((item): item is ChatEvent<ChatCreatedPayload> =>
+    item.chatId === event.chatId && item.type === 'chat.created'
+  )
+  if (!chatCreated) return []
+
+  return uniqueUserIds(chatCreatedMemberIds(chatCreated)).filter((userId) => userId !== currentUserId)
+}
+
 export function canAcceptPeerEvent(chats: ChatSummary[], currentUserId: UserId, event: ChatEvent): boolean {
   if (event.type === 'chat.created') {
     return chatCreatedMemberIds(event as ChatEvent<ChatCreatedPayload>).includes(currentUserId)

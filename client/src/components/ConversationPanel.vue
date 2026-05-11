@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import type { ChatApp } from '../chat/composables/useChatApp'
 import {
   EMPTY_READ_RECEIPT_LABEL,
@@ -15,6 +15,29 @@ const props = defineProps<{
 }>()
 
 const messageText = ref('')
+const messagesContainer = ref<HTMLElement | null>(null)
+
+function scrollMessagesToBottom(): void {
+  const container = messagesContainer.value
+  if (!container) return
+  container.scrollTop = container.scrollHeight
+}
+
+watch(
+  () => {
+    const messages = props.app.activeMessages.value
+    return [
+      props.app.activeChatId.value,
+      messages.length,
+      messages.at(-1)?.id ?? ''
+    ]
+  },
+  async () => {
+    await nextTick()
+    scrollMessagesToBottom()
+  },
+  { immediate: true }
+)
 
 async function send(): Promise<void> {
   const text = messageText.value
@@ -48,7 +71,7 @@ function participantDescription(): string {
         </span>
       </header>
 
-      <div class="messages">
+      <div ref="messagesContainer" class="messages">
         <article
           v-for="message in app.activeMessages.value"
           :key="message.id"

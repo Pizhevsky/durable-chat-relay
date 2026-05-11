@@ -42,3 +42,24 @@ export function createPeerConnectionState(input: CreatePeerConnectionInput): Pee
 
   return peer
 }
+
+export function closePeerConnection(peer: PeerConnectionState): void {
+  if (peer.channel) {
+    peer.channel.onopen = null
+    peer.channel.onmessage = null
+    if (
+      typeof peer.channel.close === 'function' &&
+      (peer.channel.readyState === 'open' || peer.channel.readyState === 'connecting')
+    ) {
+      peer.channel.close()
+    }
+    peer.channel = undefined
+  }
+
+  peer.connection.ondatachannel = null
+  peer.connection.onicecandidate = null
+  peer.connection.onnegotiationneeded = null
+  peer.connection.onconnectionstatechange = null
+  peer.connection.close()
+  peer.pendingCandidates = []
+}

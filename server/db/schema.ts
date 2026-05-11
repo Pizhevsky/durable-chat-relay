@@ -81,9 +81,6 @@ export function initialiseSchema(db: Database.Database): void {
       value TEXT NOT NULL
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_direct_pair_key
-      ON chats(direct_pair_key)
-      WHERE direct_pair_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_events_sequence ON events(sequence);
     CREATE INDEX IF NOT EXISTS idx_events_sync_status ON events(sync_status);
     CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at);

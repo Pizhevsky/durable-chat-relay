@@ -5,7 +5,7 @@ import type { ChatEventService } from '../services/ChatEventService.js'
 export function startHelperSync(service: ChatEventService, emitAppliedEvent: (event: ChatEvent) => void): () => void {
   if (serverConfig.nodeRole !== 'helper' || !serverConfig.centralUrl) return () => undefined
 
-  const baseDelay = Math.max(1000, serverConfig.helperSyncIntervalMs)
+  const baseDelay = Math.max(serverConfig.helperSyncMinIntervalMs, serverConfig.helperSyncIntervalMs)
   const maxDelay = Math.max(baseDelay, serverConfig.helperSyncMaxBackoffMs)
   let nextDelay = baseDelay
   let timer: NodeJS.Timeout | null = null
@@ -13,7 +13,7 @@ export function startHelperSync(service: ChatEventService, emitAppliedEvent: (ev
   let stopped = false
 
   async function pushPendingEvents(): Promise<void> {
-    const events = service.getPendingCentralSync(200)
+    const events = service.getPendingCentralSync(serverConfig.helperSyncBatchSize)
     if (events.length === 0) return
 
     const response = await fetch(`${serverConfig.centralUrl}/api/sync/events`, {

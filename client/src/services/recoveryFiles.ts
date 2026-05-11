@@ -1,6 +1,4 @@
-import type { RecoveryDump } from '../../../shared/types'
-
-const SUPPORTED_RECOVERY_FORMAT = 'resilient-field-chat-recovery-v1'
+import { RECOVERY_DUMP_FORMAT, type RecoveryDump } from '../../../shared/types'
 
 export function downloadRecoveryDump(dump: RecoveryDump): void {
   const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' })
@@ -16,7 +14,7 @@ export async function readRecoveryDump(file: File): Promise<RecoveryDump> {
   const text = await file.text()
   const dump = JSON.parse(text) as RecoveryDump
 
-  if (dump.format !== SUPPORTED_RECOVERY_FORMAT) {
+  if (dump.format !== RECOVERY_DUMP_FORMAT) {
     throw new Error('Unsupported recovery dump format')
   }
 

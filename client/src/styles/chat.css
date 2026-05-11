@@ -2,6 +2,7 @@
   display: grid;
   grid-template-columns: 320px 1fr 300px;
   gap: 1rem;
+  align-items: stretch;
 }
 
 .panel {
@@ -11,8 +12,22 @@
 
 .chat-list {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  height: 620px;
+  min-height: 0;
+}
+
+.chat-list-items {
+  display: grid;
   align-content: start;
   gap: 0.75rem;
+  min-height: 0;
+  overflow-y: scroll;
+  padding: 0.25rem;
+  scrollbar-color: #9bbcff #eef2f7;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .chat-row {
@@ -28,8 +43,8 @@
 }
 
 .chat-row.active {
-  outline: 3px solid #9bbcff;
   background: #eaf1ff;
+  box-shadow: inset 0 0 0 3px #9bbcff;
 }
 
 .chat-row small {
@@ -103,7 +118,9 @@
 
 .conversation {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 620px;
+  min-height: 0;
 }
 
 .conversation-header {
@@ -119,14 +136,42 @@
 }
 
 .messages {
-  display: grid;
-  align-content: end;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-  overflow: auto;
-  padding: 1rem 0;
+  min-height: 0;
+  overflow-y: scroll;
+  padding: 1rem 0.25rem 1rem 0;
+  scrollbar-color: #9bbcff #eef2f7;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.messages::before {
+  content: "";
+  margin-top: auto;
+}
+
+.chat-list-items::-webkit-scrollbar,
+.messages::-webkit-scrollbar {
+  width: 10px;
+}
+
+.chat-list-items::-webkit-scrollbar-track,
+.messages::-webkit-scrollbar-track {
+  background: #eef2f7;
+  border-radius: 999px;
+}
+
+.chat-list-items::-webkit-scrollbar-thumb,
+.messages::-webkit-scrollbar-thumb {
+  border: 2px solid #eef2f7;
+  border-radius: 999px;
+  background: #9bbcff;
 }
 
 .message {
+  flex: 0 0 auto;
   max-width: 70%;
   padding: 1rem;
   border-radius: 20px;
@@ -189,5 +234,11 @@
 
   .panel {
     min-height: auto;
+  }
+
+  .chat-list,
+  .conversation {
+    height: min(620px, calc(100vh - 3rem));
+    min-height: 420px;
   }
 }

@@ -165,6 +165,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
     socket.on('peer:signal', ({ toUserId, signal }: { toUserId?: unknown; signal?: unknown }) => {
       const session = requireSession(socket)
       if (typeof toUserId !== 'string') return
+      if (session.userId === toUserId || !userSockets.has(toUserId)) return
       if (!service.usersShareActiveChat(session.userId, toUserId)) return
 
       emitToUser(toUserId, 'peer:signal', {

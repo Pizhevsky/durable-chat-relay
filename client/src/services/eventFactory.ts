@@ -8,9 +8,10 @@ import type {
   NodeId,
   UserId
 } from '../../../shared/types'
+import { clientConfig } from '../config/clientConfig'
 import { nowIso } from '../utils/dates'
 
-let logicalClock = Number(localStorage.getItem('resilient-field-chat-clock') ?? 0)
+let logicalClock = Number(localStorage.getItem(clientConfig.storageKeys.logicalClock) ?? 0)
 
 export function createChatEvent<TPayload extends ChatEventPayload>(input: {
   nodeId: NodeId
@@ -22,7 +23,7 @@ export function createChatEvent<TPayload extends ChatEventPayload>(input: {
   syncStatus?: EventSyncStatus
 }): ChatEvent<TPayload> {
   logicalClock += 1
-  localStorage.setItem('resilient-field-chat-clock', String(logicalClock))
+  localStorage.setItem(clientConfig.storageKeys.logicalClock, String(logicalClock))
 
   return {
     eventId: `${input.deviceId}:${crypto.randomUUID()}`,

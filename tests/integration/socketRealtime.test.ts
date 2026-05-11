@@ -29,7 +29,7 @@ describe('Socket.IO realtime integration', () => {
     restoreConfig()
   })
 
-  it('broadcasts chat events only to members and validates peer signaling targets', async () => {
+  it('broadcasts chat events and peer signaling only to active shared-chat users', async () => {
     const { db, service } = createService()
     const httpServer = createServer()
     const ioServer = new Server(httpServer, { cors: { origin: '*' } })
@@ -77,7 +77,7 @@ describe('Socket.IO realtime integration', () => {
         toUserId: 'u-mark',
         signal: { type: 'offer', sdp: { type: 'offer', sdp: 'fake-offer' } }
       })
-      await new Promise((resolveValue) => setTimeout(resolveValue, 25))
+      await waitForNoSocketEvent()
       expect(markSignal).not.toHaveBeenCalled()
     } finally {
       denis.close()
@@ -89,3 +89,9 @@ describe('Socket.IO realtime integration', () => {
     }
   })
 })
+
+function waitForNoSocketEvent(): Promise<void> {
+  return new Promise((resolveValue) => {
+    setTimeout(resolveValue, 25)
+  })
+}

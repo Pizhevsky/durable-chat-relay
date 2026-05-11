@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { canAcceptPeerEvent, peerTargetUserIds } from '../../client/src/chat/events/peerEventRouting'
+import {
+  canAcceptPeerEvent,
+  peerTargetUserIds,
+  peerTargetUserIdsFromEvents
+} from '../../client/src/chat/events/peerEventRouting'
 import type { ChatEvent, ChatSummary } from '../../shared/types'
+import { chatCreatedEvent, messageCreatedEvent } from '../helpers/chatEvents'
 
 const chats: ChatSummary[] = [
   {
@@ -30,23 +35,15 @@ const chats: ChatSummary[] = [
 ]
 
 function messageEvent(chatId: string): ChatEvent {
-  return {
-    eventId: `browser-test:${crypto.randomUUID()}`,
+  return messageCreatedEvent({
+    chatId,
     originNodeId: 'central-demo',
     originDeviceId: 'device-denis',
-    actorUserId: 'u-denis',
-    chatId,
-    type: 'message.created',
     payload: {
-      messageId: `msg-${crypto.randomUUID()}`,
-      clientMessageId: `msg-${crypto.randomUUID()}`,
       chatId,
       text: 'Private message'
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    logicalClock: 1,
-    syncStatus: 'local'
-  }
+    }
+  })
 }
 
 describe('peer event routing', () => {
@@ -57,5 +54,24 @@ describe('peer event routing', () => {
   it('rejects peer events for chats the current user does not belong to', () => {
     expect(canAcceptPeerEvent(chats, 'u-mark', messageEvent('chat-anna'))).toBe(false)
     expect(canAcceptPeerEvent(chats, 'u-anna', messageEvent('chat-anna'))).toBe(true)
+  })
+
+  it('can route relayed message events using the saved chat creation event', () => {
+    const chatCreated = chatCreatedEvent({
+      chatId: 'chat-kate-denis',
+      actorUserId: 'u-kate',
+      payload: {
+        chatId: 'chat-kate-denis',
+        clientChatId: 'chat-kate-denis',
+        type: 'direct',
+        memberIds: ['u-denis']
+      }
+    })
+    const message = messageEvent('chat-kate-denis')
+
+    expect(peerTargetUserIdsFromEvents(chats, 'u-ivan', message, [chatCreated, message])).toEqual([
+      'u-kate',
+      'u-denis'
+    ])
   })
 })

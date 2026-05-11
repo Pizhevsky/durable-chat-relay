@@ -22,9 +22,10 @@ Implemented now:
 
 ```txt
 Socket.IO exchanges WebRTC offers/answers/candidates
-Browser opens a chat-events data channel to known chat peers
-New chat events are sent over the data channel
-Receiving browser stores peer events in IndexedDB
+Browser attempts to open a chat-events data channel to known chat peers
+New chat events are sent over open data channels to active chat members only
+Receiving browser stores acceptable peer events in IndexedDB
+Connected receivers can upload accepted peer events to central/helper
 Peers ACK stored events
 Peers exchange event summaries when the channel opens
 Peers request and backfill missing events by eventId
@@ -34,10 +35,14 @@ Central later deduplicates by eventId when peers reconnect
 Limitations:
 
 - Peers must be known active chat members.
+- Peer events are targeted to active chat members; browsers do not store
+  non-member peer payloads as relay-only data.
 - Signaling must happen while central or helper Socket.IO is reachable.
 - WebRTC connectivity depends on browser and network NAT behavior.
 - Manual QR/code signaling is not implemented yet.
 - Peer ACKs are visible as a demo counter, not polished per-message UI.
+- Same-browser local broadcasts are scoped to the same selected demo user; they
+  are not a substitute for cross-user WebRTC delivery.
 
 ## Mesh Protocol
 
@@ -95,8 +100,9 @@ If Denis sends a group message to Anna, Mark, and Kate:
 
 ```txt
 Denis stores event locally
-Denis sends event to Anna, Mark and Kate
-Each peer stores the same event
+Denis sends event to Anna, Mark and Kate if their data channels are open
+Each reached peer validates membership and stores the same event
+Connected peers can upload the original event without changing the sender
 Peers ACK the event
 Later any browser can upload the event to central
 Central stores it once by eventId
@@ -140,9 +146,9 @@ Membership changes need stronger rules:
 member.added/member.removed = central validates after reconnect
 ```
 
-For the first mesh version, outage mode focuses on existing chats and messages.
-New memberships can be accepted locally but marked as requiring central
-confirmation.
+For the current mesh version, outage mode focuses on existing chats and
+messages. Production-grade offline membership changes would need signed events,
+authorization rules and conflict repair UI.
 
 ## Recovery After Mesh Mode
 
@@ -150,6 +156,7 @@ When central connectivity returns:
 
 ```txt
 Browser uploads local event log
+Connected peer may already have uploaded a peer-replicated event
 Central deduplicates by eventId
 Central validates permissions
 Central marks accepted events as central-synced

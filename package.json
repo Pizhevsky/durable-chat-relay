@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Chat prototype for field teams with unreliable connectivity, built with Vue 3, TypeScript, Express, Socket.IO, SQLite, IndexedDB recovery and helper-node sync.",
+  "description": "Chat prototype for field teams with unreliable connectivity, built with Vue 3, TypeScript, Express, Socket.IO, SQLite, IndexedDB recovery, helper-node sync and peer-assisted WebRTC fallback.",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts",

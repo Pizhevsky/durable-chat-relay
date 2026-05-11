@@ -1,7 +1,7 @@
 import type { PeerIceCandidate, PeerSessionDescription } from '../../../../shared/types'
 import { clientConfig } from '../../config/clientConfig'
 
-export const ICE_SERVERS: RTCIceServer[] = clientConfig.defaultIceServers
+export const ICE_SERVERS: RTCIceServer[] = clientConfig.peer.defaultIceServers
 
 export function supportsWebRtc(): boolean {
   return typeof RTCPeerConnection !== 'undefined'

@@ -3,6 +3,7 @@ import Database from 'better-sqlite3'
 import { initialiseSchema, seedDemoUsers } from '../../server/db/schema'
 import { ChatEventService } from '../../server/services/ChatEventService'
 import type { ChatEvent } from '../../shared/types'
+import { chatCreatedEvent, messageCreatedEvent } from '../helpers/chatEvents'
 
 function createService(role: 'central' | 'helper' = 'central') {
   const db = new Database(':memory:')
@@ -12,24 +13,21 @@ function createService(role: 'central' | 'helper' = 'central') {
 }
 
 function baseEvent(overrides: Partial<ChatEvent> = {}): ChatEvent {
-  return {
+  const base = chatCreatedEvent({
     eventId: `device-a:${crypto.randomUUID()}`,
     originNodeId: 'browser-a',
     originDeviceId: 'device-a',
     actorUserId: 'u-denis',
     chatId: 'chat-1',
-    type: 'chat.created',
     payload: {
       chatId: 'chat-1',
       clientChatId: 'chat-1',
       type: 'direct',
       memberIds: ['u-denis', 'u-anna']
-    },
-    createdAt: new Date().toISOString(),
-    logicalClock: 1,
-    syncStatus: 'local',
-    ...overrides
-  }
+    }
+  }) as ChatEvent
+
+  return { ...base, ...overrides }
 }
 
 describe('ChatEventService', () => {
@@ -78,22 +76,55 @@ describe('ChatEventService', () => {
     const service = createService()
     service.applyEvent(baseEvent())
 
-    service.applyEvent(baseEvent({
+    service.applyEvent(messageCreatedEvent({
       eventId: 'device-a:message-1',
-      type: 'message.created',
+      originNodeId: 'browser-a',
+      originDeviceId: 'device-a',
+      actorUserId: 'u-denis',
+      chatId: 'chat-1',
       payload: {
         messageId: 'msg-1',
         clientMessageId: 'msg-1',
         chatId: 'chat-1',
         text: 'Hello from the field office'
       },
-      logicalClock: 2
     }))
 
     const messages = service.listMessages('chat-1', 'u-denis')
     expect(messages).toHaveLength(1)
     expect(messages[0].readBy).toContain('u-denis')
     expect(service.listChats('u-anna')[0].unreadCount).toBe(1)
+  })
+
+  it('deduplicates a peer-relayed message when the original sender reconnects', () => {
+    const service = createService()
+    service.applyEvent(baseEvent())
+    const denisLocalMessage = messageCreatedEvent({
+      eventId: 'device-denis:message-peer-relayed',
+      originDeviceId: 'device-denis',
+      actorUserId: 'u-denis',
+      chatId: 'chat-1',
+      payload: {
+        messageId: 'msg-peer-relayed',
+        clientMessageId: 'msg-peer-relayed',
+        chatId: 'chat-1',
+        text: 'Sent while Denis was local-only'
+      },
+      syncStatus: 'peer-replicated'
+    })
+
+    const relayedByAnna = service.applyEvents([denisLocalMessage])
+    const laterFromDenis = service.applyEvent(denisLocalMessage)
+    const messagesForAnna = service.listMessages('chat-1', 'u-anna')
+
+    expect(relayedByAnna.accepted).toEqual([denisLocalMessage.eventId])
+    expect(laterFromDenis.inserted).toBe(false)
+    expect(messagesForAnna).toHaveLength(1)
+    expect(messagesForAnna[0]).toEqual(expect.objectContaining({
+      id: 'msg-peer-relayed',
+      senderId: 'u-denis',
+      syncStatus: 'central-synced'
+    }))
   })
 
   it('enforces owner-only group member changes', () => {
@@ -117,6 +148,27 @@ describe('ChatEventService', () => {
       type: 'member.added',
       payload: { chatId: 'group-1', memberId: 'u-mark' }
     }))).toThrow(/Only the group owner/)
+  })
+
+  it('throws when a member removal affects no removable member', () => {
+    const service = createService()
+    service.applyEvent(baseEvent({
+      chatId: 'group-1',
+      payload: {
+        chatId: 'group-1',
+        clientChatId: 'group-1',
+        type: 'group',
+        title: 'Outage group',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    }))
+
+    expect(() => service.applyEvent(baseEvent({
+      eventId: 'device-a:remove-missing',
+      chatId: 'group-1',
+      type: 'member.removed',
+      payload: { chatId: 'group-1', memberId: 'u-mark' }
+    }))).toThrow(/Member not found or is the group owner/)
   })
 
   it('marks helper events as helper-synced until central confirms them', () => {

@@ -5,8 +5,10 @@ import type {
   ChatSummary,
   PeerSignalMessage,
   PeerSignalPayload,
+  SyncResponse,
   UserId
 } from '../../../../shared/types'
+import { clientConfig } from '../../config/clientConfig'
 import { apiOrigin } from '../../services/runtimeConfig'
 
 export type PresenceSnapshot = Record<UserId, boolean>
@@ -15,8 +17,6 @@ interface PendingPeerSignal {
   toUserId: UserId
   signal: PeerSignalPayload
 }
-
-const MAX_PENDING_PEER_SIGNALS = 100
 
 export function useSocketConnection(input: {
   deviceId: string
@@ -30,42 +30,47 @@ export function useSocketConnection(input: {
 }) {
   let socket: Socket | null = null
   let lastConfig: AppConfig | null = null
-  let demoLocalOnly = false
+  let localTransportPaused = false
   let isSessionReady = false
   const pendingPeerSignals: PendingPeerSignal[] = []
 
   function connect(config: AppConfig): void {
     lastConfig = config
-    if (demoLocalOnly) return
 
     closeSocket()
     isSessionReady = false
     socket = io(apiOrigin(), { transports: ['websocket', 'polling'] })
 
     socket.on('connect', () => {
-      input.onConnectionLabel(
-        config.nodeRole === 'helper'
-          ? 'Connected through helper node'
-          : 'Connected to central server'
-      )
+      if (localTransportPaused) {
+        input.onConnectionLabel('Local-only mode, peer signaling available')
+      } else {
+        input.onConnectionLabel(
+          config.nodeRole === 'helper'
+            ? 'Connected through helper node'
+            : 'Connected to central server'
+        )
+      }
       socket?.emit('client:hello', {
         userId: input.getUserId(),
         deviceId: input.deviceId
       })
-      input.onConnected?.()
     })
 
     socket.on('disconnect', () => {
       isSessionReady = false
-      if (!demoLocalOnly) input.onConnectionLabel('Offline, saving locally')
+      if (!localTransportPaused) input.onConnectionLabel('Offline, saving locally')
     })
 
     socket.on('chat:list', (chats) => {
       isSessionReady = true
-      input.onChats(chats)
+      if (!localTransportPaused) input.onChats(chats)
       flushPeerSignals()
+      if (!localTransportPaused) input.onConnected?.()
     })
-    socket.on('event:applied', input.onEvent)
+    socket.on('event:applied', (event) => {
+      if (!localTransportPaused) input.onEvent(event)
+    })
     socket.on('peer:signal', input.onPeerSignal ?? (() => undefined))
     socket.on('presence:update', input.onPresence ?? (() => undefined))
   }
@@ -80,14 +85,16 @@ export function useSocketConnection(input: {
     })
   }
 
-  function setDemoLocalOnly(enabled: boolean): void {
-    demoLocalOnly = enabled
+  function setLocalTransportPaused(enabled: boolean): void {
+    localTransportPaused = enabled
 
     if (enabled) {
-      clearPendingPeerSignals()
-      isSessionReady = false
-      closeSocket()
-      input.onConnectionLabel('Demo local-only mode, saving to IndexedDB')
+      input.onConnectionLabel(
+        socket?.connected
+          ? 'Local-only mode, peer signaling available'
+          : 'Local-only mode, saving to IndexedDB'
+      )
+      if (!socket && lastConfig) connect(lastConfig)
       return
     }
 
@@ -96,8 +103,8 @@ export function useSocketConnection(input: {
 
   function publishEvent(event: ChatEvent): Promise<ChatEvent> {
     return new Promise((resolve, reject) => {
-      if (demoLocalOnly) {
-        reject(new Error('Demo local-only mode is enabled'))
+      if (localTransportPaused) {
+        reject(new Error('Local-only mode is enabled'))
         return
       }
 
@@ -113,9 +120,26 @@ export function useSocketConnection(input: {
     })
   }
 
-  function sendPeerSignal(toUserId: UserId, signal: PeerSignalPayload): void {
-    if (demoLocalOnly) return
+  function syncEvents(events: ChatEvent[]): Promise<SyncResponse> {
+    return new Promise((resolve, reject) => {
+      if (localTransportPaused) {
+        reject(new Error('Local-only mode is enabled'))
+        return
+      }
 
+      if (!socket?.connected || !isSessionReady) {
+        reject(new Error('Socket session is not ready'))
+        return
+      }
+
+      socket.emit('sync:events', events, (response: SyncResponse & { ok?: boolean; error?: string }) => {
+        if (response.ok === false) reject(new Error(response.error ?? 'Event sync failed'))
+        else resolve(response)
+      })
+    })
+  }
+
+  function sendPeerSignal(toUserId: UserId, signal: PeerSignalPayload): void {
     if (!socket?.connected || !isSessionReady) {
       queuePeerSignal(toUserId, signal)
       return
@@ -126,11 +150,11 @@ export function useSocketConnection(input: {
 
   function queuePeerSignal(toUserId: UserId, signal: PeerSignalPayload): void {
     pendingPeerSignals.push({ toUserId, signal })
-    if (pendingPeerSignals.length > MAX_PENDING_PEER_SIGNALS) pendingPeerSignals.shift()
+    if (pendingPeerSignals.length > clientConfig.peer.maxPendingSignals) pendingPeerSignals.shift()
   }
 
   function flushPeerSignals(): void {
-    if (demoLocalOnly || !socket?.connected || !isSessionReady) return
+    if (!socket?.connected || !isSessionReady) return
 
     const signals = pendingPeerSignals.splice(0)
     for (const { toUserId, signal } of signals) {
@@ -158,10 +182,11 @@ export function useSocketConnection(input: {
   return {
     connect,
     reconnectUser,
-    setDemoLocalOnly,
+    setLocalTransportPaused,
     publishEvent,
+    syncEvents,
     sendPeerSignal,
-    isConnected: () => Boolean(socket?.connected) && !demoLocalOnly,
+    isConnected: () => Boolean(socket?.connected) && isSessionReady && !localTransportPaused,
     close
   }
 }

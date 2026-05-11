@@ -1,13 +1,20 @@
 import type { ChatEvent } from '../../../../shared/types'
+import { clientConfig } from '../../config/clientConfig'
 
-const CHANNEL_NAME = 'resilient-field-chat-events'
+interface LocalEventBusMessage {
+  userId: string
+  event: ChatEvent
+}
 
 export interface LocalEventBus {
   publish: (event: ChatEvent) => void
   close: () => void
 }
 
-export function createLocalEventBus(onEvent: (event: ChatEvent) => void): LocalEventBus {
+export function createLocalEventBus(input: {
+  getUserId: () => string
+  onEvent: (event: ChatEvent) => void
+}): LocalEventBus {
   if (typeof BroadcastChannel === 'undefined') {
     return {
       publish: () => undefined,
@@ -15,22 +22,34 @@ export function createLocalEventBus(onEvent: (event: ChatEvent) => void): LocalE
     }
   }
 
-  const channel = new BroadcastChannel(CHANNEL_NAME)
+  const channel = new BroadcastChannel(clientConfig.localEventChannelName)
   const messageHandler = (message: MessageEvent<unknown>) => {
-    if (isChatEvent(message.data)) onEvent(message.data)
+    if (!isLocalEventBusMessage(message.data)) return
+    if (message.data.userId !== input.getUserId()) return
+    input.onEvent(message.data.event)
   }
 
   channel.addEventListener('message', messageHandler)
 
   return {
     publish: (event) => {
-      channel.postMessage(event)
+      channel.postMessage({
+        userId: input.getUserId(),
+        event
+      })
     },
     close: () => {
       channel.removeEventListener('message', messageHandler)
       channel.close()
     }
   }
+}
+
+function isLocalEventBusMessage(value: unknown): value is LocalEventBusMessage {
+  if (!value || typeof value !== 'object') return false
+  const message = value as Partial<LocalEventBusMessage>
+  if (typeof message.userId !== 'string') return false
+  return isChatEvent(message.event)
 }
 
 function isChatEvent(value: unknown): value is ChatEvent {

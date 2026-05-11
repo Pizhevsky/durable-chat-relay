@@ -145,6 +145,11 @@ export function createChatEventApplier(input: {
   }
 
   function applyMessageRead(event: ChatEvent<MessageReadPayload>): ApplyEventResult {
+    const chat = input.chats.value.find((item) => item.id === event.chatId)
+    if (chat && event.actorUserId === input.currentUserId.value) {
+      input.upsertChat({ ...chat, unreadCount: 0, syncStatus: event.syncStatus })
+    }
+
     const messages = input.messagesByChat[event.chatId]
     if (!messages) return { needsRefresh: false }
 
@@ -157,11 +162,6 @@ export function createChatEventApplier(input: {
       readBy: uniqueUserIds([...message.readBy, event.actorUserId])
     }
     input.messagesByChat[event.chatId] = [...messages]
-
-    const chat = input.chats.value.find((item) => item.id === event.chatId)
-    if (chat && event.actorUserId === input.currentUserId.value) {
-      input.upsertChat({ ...chat, unreadCount: 0, syncStatus: event.syncStatus })
-    }
 
     return { needsRefresh: false }
   }

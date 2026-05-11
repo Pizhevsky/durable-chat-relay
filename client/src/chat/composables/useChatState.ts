@@ -6,6 +6,7 @@ import type {
   User,
   UserId
 } from '../../../../shared/types'
+import { clientConfig } from '../../config/clientConfig'
 import { canonicalDirectPairKey } from '../../utils/chatIdentity'
 import { createChatEventApplier } from '../events/chatEventApplier'
 
@@ -14,9 +15,11 @@ export function useChatState() {
   const chats = ref<ChatSummary[]>([])
   const messagesByChat = reactive<Record<string, Message[]>>({})
   const activeChatId = ref<string | null>(null)
-  const currentUserId = ref(userFromUrl() ?? localStorage.getItem('resilient-field-chat-user') ?? 'u-denis')
+  const currentUserId = ref(
+    userFromUrl() ?? localStorage.getItem(clientConfig.storageKeys.selectedUserId) ?? clientConfig.defaultUserId
+  )
   const connectionLabel = ref('starting')
-  const peerStatus = ref('Peer fallback: waiting')
+  const peerStatus = ref('Peer fallback: ready')
   const peerAckCount = ref(0)
   const peerMissingSyncStatus = ref('idle')
   const lastPeerEventType = ref('none')
@@ -29,7 +32,7 @@ export function useChatState() {
 
   function setCurrentUser(userId: string): void {
     currentUserId.value = userId
-    localStorage.setItem('resilient-field-chat-user', userId)
+    localStorage.setItem(clientConfig.storageKeys.selectedUserId, userId)
   }
 
   function setChats(nextChats: ChatSummary[]): void {

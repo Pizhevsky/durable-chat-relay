@@ -2,27 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { reactive, ref } from 'vue'
 import { createChatEventApplier } from '../../client/src/chat/events/chatEventApplier'
 import type { ChatEvent, ChatSummary, Message, User } from '../../shared/types'
+import { messageCreatedEvent } from '../helpers/chatEvents'
 
-function messageEvent(chatId: string, overrides: Partial<ChatEvent> = {}): ChatEvent {
-  const messageId = `msg-${crypto.randomUUID()}`
-  return {
-    eventId: `browser-test:${crypto.randomUUID()}`,
+function messageEvent(chatId: string): ChatEvent {
+  return messageCreatedEvent({
+    chatId,
     originNodeId: 'central-demo',
     originDeviceId: 'device-denis',
-    actorUserId: 'u-denis',
-    chatId,
-    type: 'message.created',
+    syncStatus: 'central-synced',
     payload: {
-      messageId,
-      clientMessageId: messageId,
       chatId,
       text: 'Private message'
-    },
-    createdAt: new Date().toISOString(),
-    logicalClock: 1,
-    syncStatus: 'central-synced',
-    ...overrides
-  }
+    }
+  })
 }
 
 describe('chat event applier', () => {
@@ -106,5 +98,63 @@ describe('chat event applier', () => {
 
     expect(chats.value[0].unreadCount).toBe(1)
     expect(messagesByChat['chat-group']).toHaveLength(1)
+  })
+
+  it('clears unread count for current user read events even when messages are not loaded', () => {
+    const users = ref<User[]>([{ id: 'u-anna', name: 'Anna' }, { id: 'u-denis', name: 'Denis' }])
+    const chats = ref<ChatSummary[]>([{
+      id: 'chat-group',
+      clientChatId: 'chat-group',
+      directPairKey: null,
+      type: 'group',
+      title: 'Field group',
+      createdBy: 'u-denis',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      syncStatus: 'central-synced',
+      members: [],
+      unreadCount: 2,
+      lastMessage: null
+    }])
+    const messagesByChat = reactive<Record<string, Message[]>>({})
+    const recentEvents = ref<ChatEvent[]>([])
+
+    const applier = createChatEventApplier({
+      users,
+      chats,
+      messagesByChat,
+      activeChatId: ref(null),
+      currentUserId: ref('u-anna'),
+      recentEvents,
+      upsertChat: (chat) => {
+        const index = chats.value.findIndex((item) => item.id === chat.id)
+        if (index >= 0) chats.value[index] = chat
+        else chats.value.unshift(chat)
+      },
+      removeChat: (chatId) => {
+        chats.value = chats.value.filter((chat) => chat.id !== chatId)
+      },
+      upsertMessage: (message) => {
+        messagesByChat[message.chatId] = [...(messagesByChat[message.chatId] ?? []), message]
+      }
+    })
+
+    applier.applyEvent({
+      eventId: 'device-anna:read-1',
+      originNodeId: 'browser-anna',
+      originDeviceId: 'device-anna',
+      actorUserId: 'u-anna',
+      chatId: 'chat-group',
+      type: 'message.read',
+      payload: {
+        chatId: 'chat-group',
+        messageId: 'msg-1'
+      },
+      createdAt: '2026-01-01T00:00:02.000Z',
+      logicalClock: 3,
+      syncStatus: 'central-synced'
+    })
+
+    expect(chats.value[0].unreadCount).toBe(0)
+    expect(messagesByChat['chat-group']).toBeUndefined()
   })
 })

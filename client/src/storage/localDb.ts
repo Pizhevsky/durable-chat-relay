@@ -1,18 +1,20 @@
-import type {
-  ChatEvent,
-  ChatId,
-  ChatSummary,
-  DeviceId,
-  EventId,
-  Message,
-  RecoveryDump,
-  User,
-  UserId
+import {
+  RECOVERY_DUMP_FORMAT,
+  type ChatEvent,
+  type ChatId,
+  type ChatSummary,
+  type DeviceId,
+  type EventId,
+  type Message,
+  type RecoveryDump,
+  type User,
+  type UserId
 } from '../../../shared/types'
 import { nowIso } from '../utils/dates'
 import { plainRecord } from '../utils/records'
 import {
   localDb,
+  MAX_EVENT_RETRY_COUNT,
   SYNCED_EVENT_MIN_KEEP,
   SYNCED_EVENT_RETENTION_MS,
   type LocalEventRecord,
@@ -22,6 +24,7 @@ import {
 
 export {
   localDb,
+  MAX_EVENT_RETRY_COUNT,
   SYNCED_EVENT_MIN_KEEP,
   SYNCED_EVENT_RETENTION_MS,
   type LocalEventRecord,
@@ -33,11 +36,15 @@ export async function saveLocalEvent(event: ChatEvent): Promise<void> {
   await localDb.events.put({
     ...plainRecord(event),
     localStatus: 'pending',
+    retryCount: 0,
     updatedAt: nowIso()
   })
 }
 
-export async function savePeerEvent(event: ChatEvent, peerDeviceId: DeviceId): Promise<void> {
+export async function savePeerEvent(
+  event: ChatEvent,
+  peerDeviceId: DeviceId
+): Promise<void> {
   const syncedByCentral = event.syncStatus === 'central-synced'
   const updatedAt = nowIso()
   await localDb.transaction('rw', localDb.events, localDb.peerAcks, async () => {
@@ -45,6 +52,7 @@ export async function savePeerEvent(event: ChatEvent, peerDeviceId: DeviceId): P
       ...plainRecord(event),
       localStatus: syncedByCentral ? 'sent-to-central' : 'peer-replicated',
       syncStatus: syncedByCentral ? 'central-synced' : 'peer-replicated',
+      retryCount: 0,
       updatedAt
     })
     await localDb.peerAcks.put({
@@ -70,12 +78,10 @@ export async function peerSyncEvents(): Promise<LocalEventRecord[]> {
 export async function peerSyncEventsById(eventIds: EventId[]): Promise<LocalEventRecord[]> {
   if (eventIds.length === 0) return []
 
-  const eventIdSet = new Set(eventIds)
   const events = await localDb.events.bulkGet(eventIds)
   return events
     .filter((event): event is LocalEventRecord => Boolean(event))
     .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
-    .filter((event) => eventIdSet.has(event.eventId))
 }
 
 export async function cleanupSyncedEvents(options: SyncCleanupOptions = {}): Promise<SyncCleanupResult> {
@@ -126,6 +132,7 @@ export async function markEventsSent(eventIds: EventId[], localStatus: LocalEven
         localStatus,
         syncStatus: localStatus === 'sent-to-central' ? 'central-synced' : 'helper-synced',
         updatedAt: nowIso(),
+        retryCount: 0,
         lastError: undefined
       })
     }
@@ -133,9 +140,11 @@ export async function markEventsSent(eventIds: EventId[], localStatus: LocalEven
 }
 
 export async function markEventFailed(eventId: EventId, error: string): Promise<void> {
+  const event = await localDb.events.get(eventId)
   await localDb.events.update(eventId, {
     localStatus: 'failed',
     lastError: error,
+    retryCount: (event?.retryCount ?? 0) + 1,
     updatedAt: nowIso()
   })
 }
@@ -154,10 +163,12 @@ export async function remapPendingChatEvents(fromChatId: ChatId, toChatId: ChatI
 }
 
 export async function pendingEvents(): Promise<LocalEventRecord[]> {
-  return localDb.events
+  const events = await localDb.events
     .where('localStatus')
     .anyOf(['pending', 'failed', 'sent-to-helper', 'peer-replicated'])
     .sortBy('createdAt')
+
+  return events.filter((event) => (event.retryCount ?? 0) < MAX_EVENT_RETRY_COUNT)
 }
 
 export async function cacheUsers(users: User[]): Promise<void> {
@@ -199,7 +210,7 @@ export async function cachedMessages(chatId: string): Promise<Message[]> {
 export async function exportRecoveryDump(userId: UserId, deviceId: string): Promise<RecoveryDump> {
   const events = await localDb.events.orderBy('createdAt').toArray()
   return {
-    format: 'resilient-field-chat-recovery-v1',
+    format: RECOVERY_DUMP_FORMAT,
     exportedAt: nowIso(),
     exportedBy: userId,
     deviceId,
@@ -209,13 +220,14 @@ export async function exportRecoveryDump(userId: UserId, deviceId: string): Prom
 }
 
 export async function importRecoveryDump(dump: RecoveryDump): Promise<void> {
-  if (dump.format !== 'resilient-field-chat-recovery-v1') {
+  if (dump.format !== RECOVERY_DUMP_FORMAT) {
     throw new Error('Unsupported recovery dump format')
   }
 
   await localDb.events.bulkPut(dump.events.map((event) => ({
     ...plainRecord(event),
     localStatus: event.syncStatus === 'central-synced' ? 'sent-to-central' : 'pending',
+    retryCount: 0,
     updatedAt: nowIso()
   })))
 }

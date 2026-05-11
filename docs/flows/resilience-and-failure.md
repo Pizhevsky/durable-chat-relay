@@ -15,6 +15,8 @@ What local-only means:
 - not guaranteed delivered to everyone
 - may be visible to already-connected WebRTC peers
 - central/helper sees it only after reconnect
+- same-browser local broadcasts are scoped to the same selected demo user, not
+  used as cross-user delivery
 
 ## Sender Local-Only, Receiver Online
 
@@ -24,7 +26,8 @@ What local-only means:
 4. Denis sees it locally.
 5. Central does not receive it yet.
 6. Anna receives it only if an existing WebRTC channel from Denis to Anna is open.
-7. Otherwise Anna sees it after Denis reconnects and syncs.
+7. If Anna is connected, she uploads Denis' original event to central.
+8. Otherwise Anna sees it after Denis reconnects and syncs.
 
 ## Sender Local-Only, Receiver Closed
 
@@ -78,15 +81,18 @@ Result:
 5. Browser publishes events to peer channels for target chat members only.
 6. Receiver validates that it knows the chat and is an active member before saving.
 7. Receiver ACKs stored events over the peer channel.
-8. When a peer channel opens, both sides exchange event summaries.
-9. Each peer requests missing event IDs and receives missing events in batches.
-10. Peer-replicated events remain retryable until central confirmation.
+8. If the receiver is connected, it syncs the original event to central/helper
+   without rewriting the sender.
+9. When a peer channel opens, both sides exchange event summaries.
+10. Each peer requests missing event IDs and receives missing events in batches.
+11. Peer-replicated events remain retryable until central confirmation.
 
 What WebRTC does not do:
 
 - it does not discover users who were never online
 - it does not wake closed browsers
 - it does not send Denis-Anna messages to Mark
+- it does not use the one-computer `BroadcastChannel` as cross-user delivery
 - it does not replace central conflict resolution
 
 ## Duplicate Direct Chat Offline

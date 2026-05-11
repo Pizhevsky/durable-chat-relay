@@ -8,34 +8,16 @@ import {
   exportRecoveryDump,
   localDb,
   markEventFailed,
+  MAX_EVENT_RETRY_COUNT,
   markEventsSent,
   pendingEvents,
   recordPeerAck,
   savePeerEvent,
   saveLocalEvent
 } from '../../client/src/storage/localDb'
-import type { ChatEvent, ChatSummary } from '../../shared/types'
-
-function event(overrides: Partial<ChatEvent> = {}): ChatEvent {
-  return {
-    eventId: `browser-test:${crypto.randomUUID()}`,
-    originNodeId: 'browser-test',
-    originDeviceId: 'browser-test',
-    actorUserId: 'u-denis',
-    chatId: 'chat-test',
-    type: 'message.created',
-    payload: {
-      messageId: `msg-${crypto.randomUUID()}`,
-      clientMessageId: `msg-${crypto.randomUUID()}`,
-      chatId: 'chat-test',
-      text: 'Stored before network delivery'
-    },
-    createdAt: new Date().toISOString(),
-    logicalClock: 1,
-    syncStatus: 'local',
-    ...overrides
-  }
-}
+import { RECOVERY_DUMP_FORMAT } from '../../shared/types'
+import type { ChatSummary } from '../../shared/types'
+import { messageCreatedEvent } from '../helpers/chatEvents'
 
 describe('local IndexedDB outbox', () => {
   beforeEach(async () => {
@@ -44,7 +26,7 @@ describe('local IndexedDB outbox', () => {
   })
 
   it('stores pending events before network delivery', async () => {
-    const item = event()
+    const item = messageCreatedEvent()
     await saveLocalEvent(item)
 
     const pending = await pendingEvents()
@@ -52,7 +34,7 @@ describe('local IndexedDB outbox', () => {
   })
 
   it('removes central-confirmed events from retry candidates', async () => {
-    const item = event()
+    const item = messageCreatedEvent()
     await saveLocalEvent(item)
     await markEventsSent([item.eventId], 'sent-to-central')
 
@@ -60,8 +42,8 @@ describe('local IndexedDB outbox', () => {
   })
 
   it('keeps helper-confirmed and failed events retryable until central sync', async () => {
-    const helperItem = event({ eventId: 'browser-test:helper' })
-    const failedItem = event({ eventId: 'browser-test:failed' })
+    const helperItem = messageCreatedEvent({ eventId: 'browser-test:helper' })
+    const failedItem = messageCreatedEvent({ eventId: 'browser-test:failed' })
     await saveLocalEvent(helperItem)
     await saveLocalEvent(failedItem)
 
@@ -72,8 +54,19 @@ describe('local IndexedDB outbox', () => {
     expect(pending.map((row) => row.eventId).sort()).toEqual([failedItem.eventId, helperItem.eventId].sort())
   })
 
+  it('stops returning failed events after the retry cap', async () => {
+    const failedItem = messageCreatedEvent({ eventId: 'browser-test:permanent-failure' })
+    await saveLocalEvent(failedItem)
+
+    for (let retry = 0; retry < MAX_EVENT_RETRY_COUNT; retry += 1) {
+      await markEventFailed(failedItem.eventId, 'still invalid')
+    }
+
+    expect(await pendingEvents()).toHaveLength(0)
+  })
+
   it('keeps peer-replicated events retryable until central sync', async () => {
-    const item = event({ eventId: 'browser-test:peer' })
+    const item = messageCreatedEvent({ eventId: 'browser-test:peer' })
     await savePeerEvent(item, 'peer-device')
 
     const pending = await pendingEvents()
@@ -82,10 +75,10 @@ describe('local IndexedDB outbox', () => {
   })
 
   it('exports a recovery dump with local events', async () => {
-    await saveLocalEvent(event())
+    await saveLocalEvent(messageCreatedEvent())
     const dump = await exportRecoveryDump('u-denis', 'browser-test')
 
-    expect(dump.format).toBe('resilient-field-chat-recovery-v1')
+    expect(dump.format).toBe(RECOVERY_DUMP_FORMAT)
     expect(dump.events).toHaveLength(1)
   })
 
@@ -128,9 +121,9 @@ describe('local IndexedDB outbox', () => {
   })
 
   it('prunes only stale central-synced events and orphan peer ACKs', async () => {
-    const oldSynced = event({ eventId: 'browser-test:old-synced' })
-    const recentSynced = event({ eventId: 'browser-test:recent-synced' })
-    const retryable = event({ eventId: 'browser-test:retryable' })
+    const oldSynced = messageCreatedEvent({ eventId: 'browser-test:old-synced' })
+    const recentSynced = messageCreatedEvent({ eventId: 'browser-test:recent-synced' })
+    const retryable = messageCreatedEvent({ eventId: 'browser-test:retryable' })
     await saveLocalEvent(oldSynced)
     await saveLocalEvent(recentSynced)
     await saveLocalEvent(retryable)

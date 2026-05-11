@@ -1,12 +1,11 @@
 import type { DeviceId } from '../../../shared/types'
-
-const DEVICE_ID_KEY = 'resilient-field-chat-device-id'
+import { clientConfig } from '../config/clientConfig'
 
 export function getDeviceId(): DeviceId {
-  const existing = localStorage.getItem(DEVICE_ID_KEY)
+  const existing = localStorage.getItem(clientConfig.storageKeys.deviceId)
   if (existing) return existing
 
   const deviceId = `browser-${crypto.randomUUID()}`
-  localStorage.setItem(DEVICE_ID_KEY, deviceId)
+  localStorage.setItem(clientConfig.storageKeys.deviceId, deviceId)
   return deviceId
 }

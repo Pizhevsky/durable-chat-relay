@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import type { PeerSignalPayload, UserId } from '../../../../shared/types'
+import { clientConfig } from '../../config/clientConfig'
 import { createPeerMesh } from '../../services/realtime/peerMesh'
 import {
   peerSyncEvents,
@@ -9,19 +10,17 @@ import {
 } from '../../storage/localDb'
 import { uniqueUserIds } from '../../utils/chatIdentity'
 import { errorMessage } from '../errorMessage'
-import { canAcceptPeerEvent, peerTargetUserIds } from '../events/peerEventRouting'
+import { canAcceptPeerEvent, peerTargetUserIds, peerTargetUserIdsFromEvents } from '../events/peerEventRouting'
 import type { useChatState } from './useChatState'
 
 type ChatState = ReturnType<typeof useChatState>
 type AppliedChatEvent = Parameters<ChatState['applyEvent']>[0]
 type PeerSignalMessage = Parameters<ReturnType<typeof createPeerMesh>['handleSignal']>[0]
 
-const PEER_SYNC_EVENT_LIMIT = 500
-
 interface PeerReplicationOptions {
   state: ChatState
   deviceId: string
-  demoLocalOnly: Ref<boolean>
+  localTransportPaused: Ref<boolean>
   sendSignal: (toUserId: UserId, signal: PeerSignalPayload) => void
   onEventAccepted: (event: AppliedChatEvent) => Promise<void>
 }
@@ -29,7 +28,7 @@ interface PeerReplicationOptions {
 export function usePeerReplication({
   state,
   deviceId,
-  demoLocalOnly,
+  localTransportPaused,
   sendSignal,
   onEventAccepted
 }: PeerReplicationOptions) {
@@ -39,8 +38,10 @@ export function usePeerReplication({
     sendSignal,
     getEventsForPeer: async (peerUserId) => peerEventsForUser(peerUserId, { recentOnly: true }),
     getEventsByIdsForPeer: async (eventIds, peerUserId) => peerEventsForUser(peerUserId, { eventIds }),
+    getTargetUserIds: (event) => peerTargetUserIds(state.chats.value, state.currentUserId.value, event),
     onEvent: (event, fromDeviceId) => {
-      if (!canAcceptPeerEvent(state.chats.value, state.currentUserId.value, event)) return false
+      const canAccept = canAcceptPeerEvent(state.chats.value, state.currentUserId.value, event)
+      if (!canAccept) return false
 
       return savePeerEvent(event, fromDeviceId)
         .then(async () => {
@@ -64,18 +65,18 @@ export function usePeerReplication({
     },
     onStatus: (status) => {
       state.peerStatus.value = status
-      if (demoLocalOnly.value) state.connectionLabel.value = status
+      if (localTransportPaused.value) state.connectionLabel.value = status
     }
   })
 
   function syncTargets(): void {
-    const peerUserIds = state.chats.value.flatMap((chat) =>
+    const chatMemberIds = state.chats.value.flatMap((chat) =>
       chat.members
         .filter((member) => !member.leftAt)
         .map((member) => member.userId)
     )
 
-    peerMesh.updatePeers(uniqueUserIds(peerUserIds))
+    peerMesh.updatePeers(uniqueUserIds(chatMemberIds))
   }
 
   function publishEvent(event: AppliedChatEvent): void {
@@ -98,10 +99,10 @@ export function usePeerReplication({
     const events = options.eventIds ? await peerSyncEventsById(options.eventIds) : await peerSyncEvents()
     const targetableEvents = events
       .filter((event) =>
-        peerTargetUserIds(state.chats.value, state.currentUserId.value, event).includes(peerUserId)
+        peerTargetUserIdsFromEvents(state.chats.value, state.currentUserId.value, event, events).includes(peerUserId)
       )
 
-    return options.recentOnly ? targetableEvents.slice(-PEER_SYNC_EVENT_LIMIT) : targetableEvents
+    return options.recentOnly ? targetableEvents.slice(-clientConfig.peer.syncEventLimit) : targetableEvents
   }
 
   return {

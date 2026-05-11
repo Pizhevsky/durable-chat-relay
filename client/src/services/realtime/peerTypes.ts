@@ -13,6 +13,7 @@ export interface PeerMeshInput {
   sendSignal: (toUserId: UserId, signal: PeerSignalPayload) => void
   getEventsForPeer: (peerUserId: UserId) => Promise<ChatEvent[]>
   getEventsByIdsForPeer: (eventIds: EventId[], peerUserId: UserId) => Promise<ChatEvent[]>
+  getTargetUserIds?: (event: ChatEvent) => UserId[]
   onEvent: (event: ChatEvent, fromDeviceId: DeviceId) => boolean | Promise<boolean>
   onPeerAck?: (eventId: EventId, peerDeviceId: DeviceId) => void | Promise<void>
   onPeerEvent?: (event: ChatEvent) => void
@@ -37,11 +38,9 @@ export interface PeerConnectionState {
   polite: boolean
 }
 
-export interface PeerDataMessage {
-  type: 'event:new' | 'event:batch' | 'event:ack' | 'event:summary' | 'event:request-missing'
-  event?: ChatEvent
-  events?: ChatEvent[]
-  eventId?: EventId
-  eventIds?: EventId[]
-  deviceId?: DeviceId
-}
+export type PeerDataMessage =
+  | { type: 'event:new'; event: ChatEvent }
+  | { type: 'event:batch'; events: ChatEvent[] }
+  | { type: 'event:ack'; eventId: EventId; deviceId: DeviceId }
+  | { type: 'event:summary'; eventIds: EventId[]; deviceId: DeviceId }
+  | { type: 'event:request-missing'; eventIds: EventId[]; deviceId: DeviceId }

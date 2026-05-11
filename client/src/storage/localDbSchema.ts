@@ -9,10 +9,12 @@ import type {
   User,
   UserId
 } from '../../../shared/types'
+import { clientConfig } from '../config/clientConfig'
 
 export interface LocalEventRecord extends ChatEvent {
   localStatus: 'pending' | 'sent-to-helper' | 'sent-to-central' | 'peer-replicated' | 'failed'
   lastError?: string
+  retryCount?: number
   updatedAt: string
 }
 
@@ -40,8 +42,9 @@ export interface SyncCleanupOptions {
   nowMs?: number
 }
 
-export const SYNCED_EVENT_RETENTION_MS = 24 * 60 * 60 * 1000
-export const SYNCED_EVENT_MIN_KEEP = 200
+export const SYNCED_EVENT_RETENTION_MS = clientConfig.syncedEventRetentionMs
+export const SYNCED_EVENT_MIN_KEEP = clientConfig.syncedEventMinKeep
+export const MAX_EVENT_RETRY_COUNT = clientConfig.maxEventRetryCount
 
 export class ChatLocalDb extends Dexie {
   events!: Table<LocalEventRecord, EventId>
@@ -51,7 +54,7 @@ export class ChatLocalDb extends Dexie {
   messages!: Table<CachedMessageRecord, string>
 
   constructor() {
-    super('resilient-field-chat')
+    super(clientConfig.localDbName)
     this.version(1).stores({
       events: 'eventId, chatId, actorUserId, syncStatus, localStatus, createdAt, updatedAt',
       peerAcks: '[eventId+peerDeviceId], eventId, peerDeviceId',

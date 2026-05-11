@@ -15,8 +15,8 @@ The demo has two levels:
 Optional, but useful when recording a demo:
 
 ```bash
-rm -rf data
 mkdir -p data
+rm -f data/*.sqlite data/*.sqlite-wal data/*.sqlite-shm
 ```
 
 Then install and run checks once:
@@ -92,6 +92,11 @@ Demo steps:
 
 The demo-local-only flag is kept in `sessionStorage`, so this tab stays
 disconnected after refresh until **Reconnect this tab** is clicked.
+
+If Anna sees a Denis message before Denis reconnects, that should be because
+the hero panel reports a real peer send, for example `Peer fallback: sent to 1
+peer`. Cross-user demo windows do not receive local-only messages through the
+same-browser local event bus.
 
 What to point out:
 
@@ -232,10 +237,13 @@ Suggested explanation:
 > channel exists, local-only tabs can exchange new events, compare event
 > summaries, backfill missing events, and later reconcile with central.
 
-## One-Sentence Narrative
+Useful status checks:
 
-Use this when presenting the repository:
+```txt
+Peer fallback: connected to Anna
+Peer fallback: sent to 1 peer
+Peer fallback: no open peer channel
+```
 
-> This is not a generic chat app; it is a resilient field-office communication
-> prototype where live delivery, local browser durability, optional helper
-> nodes, recovery dumps, and peer replication all work around the same event log.
+The last line means the message is still safe in IndexedDB, but it will not be
+visible to the other user until reconnect/helper sync/recovery import.

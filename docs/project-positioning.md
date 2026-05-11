@@ -34,7 +34,7 @@ Alternative names:
 vue-durable-chat
 field-chat-resilience-lab
 vue-realtime-chat-lab
-resilient-field-chat
+durable-chat
 ```
 
 ## Known Limitations

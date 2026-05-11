@@ -1,6 +1,7 @@
 # Helper Node Guide
 
-A helper node is a lightweight local process for areas or field offices that need stronger local durability than browser-only mode.
+A helper node is a lightweight local process for areas or field offices that
+need stronger local durability than browser-only mode.
 
 ## Start helper
 
@@ -31,7 +32,7 @@ The helper stores events locally while central is unreachable, then pushes them 
 - pull sync for missed central events
 - exponential backoff during outages
 - recovery export
-- future peer signaling
+- Socket.IO peer signaling relay for helper-connected users
 
 ## What it should not become
 
@@ -39,4 +40,3 @@ The helper stores events locally while central is unreachable, then pushes them 
 - heavy admin system
 - full identity provider
 - manual database management responsibility
-

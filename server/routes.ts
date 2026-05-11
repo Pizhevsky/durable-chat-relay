@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from 'express'
 import { resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
-import type { ChatEvent, RecoveryDump, SyncRequest } from '../shared/types.js'
+import { RECOVERY_DUMP_FORMAT, type ChatEvent, type RecoveryDump, type SyncRequest } from '../shared/types.js'
 import { publicConfig, serverConfig } from './config.js'
 import { toHttpError } from './errors.js'
 import type { ChatEventService } from './services/ChatEventService.js'
@@ -76,7 +76,7 @@ export function registerRoutes(app: Express, service: ChatEventService): void {
     const userId = String(request.query.userId ?? 'unknown')
     const deviceId = String(request.query.deviceId ?? 'server-export')
     const dump: RecoveryDump = {
-      format: 'resilient-field-chat-recovery-v1',
+      format: RECOVERY_DUMP_FORMAT,
       exportedAt: new Date().toISOString(),
       exportedBy: userId,
       deviceId,
@@ -89,7 +89,7 @@ export function registerRoutes(app: Express, service: ChatEventService): void {
 
   app.post('/api/recovery/import', (request, response) => {
     const dump = request.body as RecoveryDump
-    if (dump.format !== 'resilient-field-chat-recovery-v1') {
+    if (dump.format !== RECOVERY_DUMP_FORMAT) {
       response.status(422).json({ error: 'Unsupported recovery dump format' })
       return
     }

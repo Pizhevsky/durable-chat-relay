@@ -3,10 +3,10 @@ import { clientConfig } from '../config/clientConfig'
 export function apiOrigin(): string {
   const urlOverride = new URLSearchParams(window.location.search).get(clientConfig.apiOverrideQueryParam)
   if (urlOverride) {
-    localStorage.setItem(clientConfig.apiOverrideStorageKey, normaliseApiOrigin(urlOverride))
+    localStorage.setItem(clientConfig.storageKeys.apiOverride, normaliseApiOrigin(urlOverride))
   }
 
-  const storedOverride = localStorage.getItem(clientConfig.apiOverrideStorageKey)
+  const storedOverride = localStorage.getItem(clientConfig.storageKeys.apiOverride)
   if (storedOverride) return normaliseApiOrigin(storedOverride)
 
   if (window.location.port === clientConfig.devClientPort) {
