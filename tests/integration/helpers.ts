@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { createServer, type Server as HttpServer } from 'node:http'
+import { type Server as HttpServer } from 'node:http'
 import type { Socket as ClientSocket } from 'socket.io-client'
 import { initialiseSchema, seedDemoUsers } from '../../server/db/schema'
 import { ChatEventService } from '../../server/services/ChatEventService'

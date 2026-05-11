@@ -215,7 +215,7 @@ Some features are intentionally local to one browser, tab, or selected demo user
 
 This project focuses on resilience and recovery rather than production security. Browser IndexedDB records, helper-node sync payloads, peer events, and recovery dumps are treated as recovery inputs, not trusted official history.
 
-The current server validates event shape before storing an event: event type, sync status, matching `event.chatId`/`payload.chatId`, required IDs, message text length, and direct-chat pair-key consistency. The projection layer then checks business rules such as chat membership and group-owner changes.
+The current server validates event shape before storing an event: event type, sync status, `originDeviceId:eventId` event IDs, ISO 8601 timestamps, matching `event.chatId`/`payload.chatId`, required IDs, message text length, and direct-chat pair-key consistency. The projection layer then checks business rules such as chat membership and group-owner changes.
 
 A production version would go further with real authentication, per-action authorisation, registered device keys, signed events, and optional encrypted recovery dumps. If a user edited IndexedDB or changed a dump file, the modified event should be rejected unless it has a valid signature and passes server-side checks.
 

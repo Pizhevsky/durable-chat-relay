@@ -203,6 +203,23 @@ describe('ChatEventService', () => {
   })
 
 
+  it('rejects event IDs that do not follow the originDeviceId:eventId format', () => {
+    const service = createService()
+
+    expect(() => service.applyEvent(baseEvent({
+      eventId: 'x'
+    }))).toThrow(/eventId must be in originDeviceId:eventId format/)
+  })
+
+  it('rejects non-ISO event timestamps', () => {
+    const service = createService()
+
+    expect(() => service.applyEvent(baseEvent({
+      createdAt: '2000'
+    }))).toThrow(/createdAt must be an ISO 8601 date string/)
+  })
+
+
   it('marks helper events as helper-synced until central confirms them', () => {
     const service = createService('helper')
     const result = service.applyEvent(baseEvent())

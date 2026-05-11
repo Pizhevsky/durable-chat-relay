@@ -93,7 +93,8 @@ export function usePeerReplication({
   }
 
   function handleSignal(message: PeerSignalMessage): Promise<void> {
-    if (!currentPeerTargetIds().includes(message.fromUserId)) return Promise.resolve()
+    const directoryHasLoaded = state.peerDirectory.value.length > 0
+    if (directoryHasLoaded && !currentPeerTargetIds().includes(message.fromUserId)) return Promise.resolve()
     return peerMesh.handleSignal(message)
   }
 

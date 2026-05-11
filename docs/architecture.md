@@ -64,7 +64,7 @@ Rows alone are not enough for durable retry. The same message can arrive via the
 An event log gives one stable identity per action:
 
 ```txt
-eventId = originDeviceId + uuid
+eventId = originDeviceId + ':' + uuid
 ```
 
 The central server can accept the first copy and ignore duplicates.
@@ -99,4 +99,4 @@ The REST sync and recovery endpoints are also intentionally demo-trusted:
 - `POST /api/sync/events` accepts replicated events and preserves their original `actorUserId`.
 - `POST /api/recovery/import` imports event dumps and also preserves original authorship.
 
-That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, per-action authorisation checks, signed events, and stronger verification of REST sync, recovery import, and WebRTC signalling payloads. The current prototype validates event shape before projection, but it does not yet prove that a browser-created event was signed by a registered device.
+That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, per-action authorisation checks, signed events, and stronger verification of REST sync, recovery import, and WebRTC signalling payloads. The current prototype validates event shape before projection, including event ID format and ISO timestamp format, but it does not yet prove that a browser-created event was signed by a registered device.

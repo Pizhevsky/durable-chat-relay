@@ -28,11 +28,16 @@ const SYNC_STATUSES = new Set<EventSyncStatus>([
 
 const MAX_TEXT_LENGTH = 2000
 const MAX_TITLE_LENGTH = 120
+const EVENT_ID_PATTERN = /^[^:\s]+:[^:\s]+$/
+const ISO_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
 
 export function validateChatEvent(event: ChatEvent): void {
   if (!isRecord(event)) throw invalid('Event must be an object')
 
   requireString(event.eventId, 'eventId')
+  if (!EVENT_ID_PATTERN.test(event.eventId)) {
+    throw invalid('eventId must be in originDeviceId:eventId format')
+  }
   requireString(event.originNodeId, 'originNodeId')
   requireString(event.originDeviceId, 'originDeviceId')
   requireString(event.actorUserId, 'actorUserId')
@@ -44,7 +49,9 @@ export function validateChatEvent(event: ChatEvent): void {
   if (!Number.isFinite(event.logicalClock) || event.logicalClock < 0) {
     throw invalid('logicalClock must be a non-negative finite number')
   }
-  if (Number.isNaN(Date.parse(event.createdAt))) throw invalid('createdAt must be a valid date string')
+  if (!ISO_DATE_TIME_PATTERN.test(event.createdAt) || Number.isNaN(Date.parse(event.createdAt))) {
+    throw invalid('createdAt must be an ISO 8601 date string')
+  }
   if (!isRecord(event.payload)) throw invalid('payload must be an object')
 
   switch (event.type) {
