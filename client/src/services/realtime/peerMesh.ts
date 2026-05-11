@@ -23,13 +23,30 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
     const currentUserId = input.currentUserId()
     const nextPeerIds = new Set(userIds.filter((userId) => userId !== currentUserId))
 
-    for (const userId of nextPeerIds) ensurePeer(userId)
+    for (const userId of nextPeerIds) {
+      const existing = peers.get(userId)
+      if (existing && isStalePeer(existing)) {
+        closePeerConnection(existing)
+        peers.delete(userId)
+      }
+      ensurePeer(userId)
+    }
     for (const [userId, peer] of peers) {
       if (!nextPeerIds.has(userId)) {
         closePeerConnection(peer)
         peers.delete(userId)
       }
     }
+  }
+
+  function isStalePeer(peer: PeerConnectionState): boolean {
+    if (peer.connection.connectionState === 'failed') return true
+    if (peer.connection.connectionState === 'closed') return true
+    if (peer.connection.connectionState === 'disconnected') return true
+    if (!peer.channel && peer.connection.signalingState !== 'stable') return true
+    if (peer.channel?.readyState === 'closed') return true
+
+    return false
   }
 
   async function handleSignal(message: PeerSignalMessage): Promise<void> {

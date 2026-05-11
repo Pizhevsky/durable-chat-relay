@@ -2,6 +2,7 @@ import { computed, reactive, ref } from 'vue'
 import type {
   ChatEvent,
   ChatSummary,
+  PeerDirectoryEntry,
   Message,
   User,
   UserId
@@ -23,6 +24,7 @@ export function useChatState() {
   const peerAckCount = ref(0)
   const peerMissingSyncStatus = ref('idle')
   const lastPeerEventType = ref('none')
+  const peerDirectory = ref<PeerDirectoryEntry[]>([])
   const pendingCount = ref(0)
   const lastError = ref<string | null>(null)
   const recentEvents = ref<ChatEvent[]>([])
@@ -47,6 +49,10 @@ export function useChatState() {
       ...user,
       isOnline: Boolean(presence[user.id])
     }))
+  }
+
+  function setPeerDirectory(peers: PeerDirectoryEntry[]): void {
+    peerDirectory.value = peers
   }
 
   function upsertChat(chat: ChatSummary): void {
@@ -134,11 +140,13 @@ export function useChatState() {
     peerAckCount,
     peerMissingSyncStatus,
     lastPeerEventType,
+    peerDirectory,
     pendingCount,
     lastError,
     recentEvents,
     setCurrentUser,
     setPresence,
+    setPeerDirectory,
     setChats,
     upsertChat,
     removeChat,

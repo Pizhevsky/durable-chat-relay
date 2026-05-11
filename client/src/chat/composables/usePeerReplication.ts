@@ -70,13 +70,19 @@ export function usePeerReplication({
   })
 
   function syncTargets(): void {
-    const chatMemberIds = state.chats.value.flatMap((chat) =>
+    const directoryPeerIds = state.peerDirectory.value
+      .filter((peer) => peer.isOnline)
+      .map((peer) => peer.userId)
+
+    const fallbackChatMemberIds = state.chats.value.flatMap((chat) =>
       chat.members
         .filter((member) => !member.leftAt)
         .map((member) => member.userId)
     )
 
-    peerMesh.updatePeers(uniqueUserIds(chatMemberIds))
+    peerMesh.updatePeers(uniqueUserIds(
+      directoryPeerIds.length > 0 ? directoryPeerIds : fallbackChatMemberIds
+    ))
   }
 
   function publishEvent(event: AppliedChatEvent): void {

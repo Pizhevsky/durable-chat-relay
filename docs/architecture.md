@@ -6,7 +6,7 @@ Durable Chat Relay is a central-first chat system with optional helper nodes and
 
 The architecture was shaped by a real field-office constraint: offices may appear and disappear frequently, so permanent local servers are not always practical. At the same time, relying only on a central server is risky when field connectivity is unstable.
 
-This is resilience architecture, not secure enterprise messaging. The architecture can be connected to real authentication and authorization, but this implementation uses demo user switching and demo-auth headers.
+This is resilience architecture, not secure enterprise messaging. The architecture can be connected to real authentication and authorisation, but this implementation uses demo user switching and demo-auth headers.
 
 ## Modes
 
@@ -44,7 +44,16 @@ Browser <-> Browser <-> Browser
 Each browser stores event log in IndexedDB
 ```
 
-Socket.IO carries WebRTC offers, answers and ICE candidates. The server derives `fromUserId` and `fromDeviceId` from the authenticated socket session and only relays `peer:signal` to users who share an active chat with the sender.
+Socket.IO carries WebRTC offers, answers and ICE candidates. The server derives `fromUserId` and `fromDeviceId` from the authenticated socket session, sends each browser a peer directory of online/local-only users who share active chats, and only relays `peer:signal` to those shared-chat peers.
+
+
+## Peer directory preparation
+
+A WebRTC fallback only helps if peers know about each other before the central path becomes unstable. When a browser connects, changes user, creates a chat, changes membership, or switches into local-only mode, the server recalculates a peer directory for each connected user.
+
+The directory includes online or local-only users who share an active chat with the current user. The client uses that directory to prepare peer connections even if the user is not currently looking at that chat. This avoids a failure mode where Denis had a peer link to Anna, Anna later prepared a link to Kate, but Kate could not reach Denis for a group message because Kate never learned Denis was an available shared-chat peer.
+
+The directory is still scoped by chat membership. It is not a global list of every online user, and it does not allow signaling to unrelated users.
 
 ## Why event log
 
@@ -67,7 +76,7 @@ It is not a full branch server. It is a temporary cache, relay and sync queue th
 
 ## Demo visibility
 
-For portfolio and interview demos, the app includes a local-only simulation mode. It disconnects only the current browser tab from Socket.IO while the server continues running. This makes it easy to show the recovery path on one computer:
+For portfolio and interview demos, the app includes a local-only simulation mode. It pauses central/helper chat delivery for the current browser tab while keeping the socket available for peer directory updates and WebRTC signaling. This makes it easy to show the recovery path on one computer:
 
 ```txt
 connected -> local-only tab -> IndexedDB outbox -> reconnect -> automatic retry -> central-synced
@@ -88,4 +97,4 @@ The REST sync and recovery endpoints are also intentionally demo-trusted:
 - `POST /api/sync/events` accepts replicated events and preserves their original `actorUserId`.
 - `POST /api/recovery/import` imports event dumps and also preserves original authorship.
 
-That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, authorization checks, signed events and stricter validation of REST sync, recovery import and WebRTC signaling payloads.
+That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, authorisation checks, signed events and stricter validation of REST sync, recovery import and WebRTC signaling payloads.

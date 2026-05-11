@@ -2,10 +2,10 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { Server } from 'socket.io'
-import { io as createSocketClient } from 'socket.io-client'
+import { io as createSocketClient, type Socket as ClientSocket } from 'socket.io-client'
 import { localDb } from '../../client/src/storage/localDb'
 import { registerSocketHandlers } from '../../server/socket/registerSocket'
-import type { ChatEvent } from '../../shared/types'
+import type { ChatEvent, PeerDirectorySnapshot } from '../../shared/types'
 import {
   chatCreated,
   closeServer,
@@ -15,6 +15,18 @@ import {
   restoreConfig,
   waitForSocketEvent
 } from './helpers'
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function expectNoSocketEvent(socket: ClientSocket, eventName: string): Promise<void> {
+  const handler = vi.fn()
+  socket.on(eventName, handler)
+  await delay(60)
+  socket.off(eventName, handler)
+  expect(handler).not.toHaveBeenCalled()
+}
 
 describe('Socket.IO realtime integration', () => {
   beforeEach(async () => {
@@ -29,7 +41,7 @@ describe('Socket.IO realtime integration', () => {
     restoreConfig()
   })
 
-  it('broadcasts chat events and peer signaling only to active shared-chat users', async () => {
+  it('broadcasts chat events only to members and exposes a peer directory for shared-chat users', async () => {
     const { db, service } = createService()
     const httpServer = createServer()
     const ioServer = new Server(httpServer, { cors: { origin: '*' } })
@@ -64,6 +76,15 @@ describe('Socket.IO realtime integration', () => {
       expect((await annaApplied).chatId).toBe(created.chatId)
       expect(markUnexpected).not.toHaveBeenCalled()
 
+      const annaDirectory = waitForSocketEvent<PeerDirectorySnapshot>(anna, 'peer:directory')
+      denis.emit('client:mode', { localOnly: true })
+      const directory = await annaDirectory
+      expect(directory.peers).toContainEqual(expect.objectContaining({
+        userId: 'u-denis',
+        isOnline: true,
+        isLocalOnly: true
+      }))
+
       const signalToAnna = waitForSocketEvent(anna, 'peer:signal')
       denis.emit('peer:signal', {
         toUserId: 'u-anna',
@@ -71,14 +92,11 @@ describe('Socket.IO realtime integration', () => {
       })
       await expect(signalToAnna).resolves.toMatchObject({ fromUserId: 'u-denis' })
 
-      const markSignal = vi.fn()
-      mark.on('peer:signal', markSignal)
       denis.emit('peer:signal', {
         toUserId: 'u-mark',
         signal: { type: 'offer', sdp: { type: 'offer', sdp: 'fake-offer' } }
       })
-      await waitForNoSocketEvent()
-      expect(markSignal).not.toHaveBeenCalled()
+      await expectNoSocketEvent(mark, 'peer:signal')
     } finally {
       denis.close()
       anna.close()
@@ -89,9 +107,3 @@ describe('Socket.IO realtime integration', () => {
     }
   })
 })
-
-function waitForNoSocketEvent(): Promise<void> {
-  return new Promise((resolveValue) => {
-    setTimeout(resolveValue, 25)
-  })
-}

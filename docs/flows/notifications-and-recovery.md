@@ -109,7 +109,7 @@ Use cases:
 
 Trust boundary:
 
-Recovery import is demo-trusted. Production must require real authentication, authorization and signed/verifiable events.
+Recovery import is demo-trusted. Production must require real authentication, authorisation and signed/verifiable events.
 
 ## Recovery Limits
 

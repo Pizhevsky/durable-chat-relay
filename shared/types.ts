@@ -178,6 +178,20 @@ export type PeerSignalPayload =
   | { type: 'answer'; sdp: PeerSessionDescription }
   | { type: 'candidate'; candidate: PeerIceCandidate }
 
+
+export interface PeerDirectoryEntry {
+  userId: UserId
+  deviceIds: DeviceId[]
+  isOnline: boolean
+  isLocalOnly: boolean
+  lastSeenAt: string
+}
+
+export interface PeerDirectorySnapshot {
+  peers: PeerDirectoryEntry[]
+  generatedAt: string
+}
+
 export interface PeerSignalMessage {
   fromUserId: UserId
   fromDeviceId: DeviceId

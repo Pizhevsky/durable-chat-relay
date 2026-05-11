@@ -77,6 +77,10 @@ export function useDurableChatApp() {
         state.lastError.value = errorMessage(error, 'Failed to handle WebRTC signal')
       })
     },
+    onPeerDirectory: (directory) => {
+      state.setPeerDirectory(directory.peers)
+      syncPeerTargets()
+    },
     onPresence: (presence) => {
       state.setPresence(presence)
       syncPeerTargets()

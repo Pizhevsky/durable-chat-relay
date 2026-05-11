@@ -19,7 +19,7 @@
 ```txt
 Chat prototype for field teams with unreliable connectivity.
 Built with Vue 3, TypeScript, Express, Socket.IO, SQLite,
-IndexedDB recovery and helper-node sync.
+IndexedDB recovery, helper-node sync, recovery dumps and peer-assisted WebRTC fallback.
 ```
 
 ## Suggested Repository Name
@@ -51,8 +51,7 @@ durable-chat
 
 ## Why This Matters
 
-The interesting part is not that this is a chat app. The interesting part is
-the failure model.
+Most chat demos assume the server is available. Durable Chat Relay starts from a different assumption: field teams may still need to write messages while the central connection is unstable.
 
 The design assumes that connectivity can fail at several layers:
 

@@ -22,7 +22,8 @@ Implemented now:
 
 ```txt
 Socket.IO exchanges WebRTC offers/answers/candidates
-Browser attempts to open a chat-events data channel to known chat peers
+Central/helper server sends a peer directory for online/local-only shared-chat users
+Browser attempts to open a chat-events data channel to directory peers
 New chat events are sent over open data channels to active chat members only
 Receiving browser stores acceptable peer events in IndexedDB
 Connected receivers can upload accepted peer events to central/helper
@@ -34,7 +35,7 @@ Central later deduplicates by eventId when peers reconnect
 
 Limitations:
 
-- Peers must be known active chat members.
+- Peers must be known active chat members, discovered through the central/helper peer directory while signaling is available.
 - Peer events are targeted to active chat members; browsers do not store
   non-member peer payloads as relay-only data.
 - Signaling must happen while central or helper Socket.IO is reachable.
@@ -43,6 +44,13 @@ Limitations:
 - Peer ACKs are visible as a demo counter, not polished per-message UI.
 - Same-browser local broadcasts are scoped to the same selected demo user; they
   are not a substitute for cross-user WebRTC delivery.
+
+
+## Prepared peer directory
+
+The central/helper server broadcasts a peer directory to connected browsers. Each user receives only peers who share active chats with them. Local-only tabs still keep the socket available for signaling, so other shared-chat users can prepare WebRTC links before they also move into local-only mode.
+
+This fixes an important outage case: if Denis has prepared a peer link with Anna, Anna later prepares one with Kate, and Kate sends a group message that includes Denis, Kate should already know Denis as a targetable shared-chat peer if both were connected while the directory was available. Without the directory, the peer graph could depend too much on whichever chat each user happened to open.
 
 ## Mesh Protocol
 
@@ -111,12 +119,13 @@ Central stores it once by eventId
 ## Discovery And Signaling
 
 WebRTC still needs signaling. The project should not pretend browsers can
-always discover each other magically on a LAN.
+automatically discover every peer on a LAN without a signaling path.
 
 Possible signaling sources:
 
 - central server while online
 - helper node while available
+- central/helper peer directory for active shared-chat peers
 - already established peer links
 - QR/manual exchange for emergency cases
 
@@ -148,7 +157,7 @@ member.added/member.removed = central validates after reconnect
 
 For the current mesh version, outage mode focuses on existing chats and
 messages. Production-grade offline membership changes would need signed events,
-authorization rules and conflict repair UI.
+authorisation rules and conflict repair UI.
 
 ## Recovery After Mesh Mode
 

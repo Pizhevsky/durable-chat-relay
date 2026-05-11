@@ -3,6 +3,7 @@ import type {
   AppConfig,
   ChatEvent,
   ChatSummary,
+  PeerDirectorySnapshot,
   PeerSignalMessage,
   PeerSignalPayload,
   SyncResponse,
@@ -26,6 +27,7 @@ export function useSocketConnection(input: {
   onConnectionLabel: (label: string) => void
   onConnected?: () => void
   onPeerSignal?: (message: PeerSignalMessage) => void
+  onPeerDirectory?: (directory: PeerDirectorySnapshot) => void
   onPresence?: (presence: PresenceSnapshot) => void
 }) {
   let socket: Socket | null = null
@@ -53,7 +55,8 @@ export function useSocketConnection(input: {
       }
       socket?.emit('client:hello', {
         userId: input.getUserId(),
-        deviceId: input.deviceId
+        deviceId: input.deviceId,
+        localOnly: localTransportPaused
       })
     })
 
@@ -72,6 +75,7 @@ export function useSocketConnection(input: {
       if (!localTransportPaused) input.onEvent(event)
     })
     socket.on('peer:signal', input.onPeerSignal ?? (() => undefined))
+    socket.on('peer:directory', input.onPeerDirectory ?? (() => undefined))
     socket.on('presence:update', input.onPresence ?? (() => undefined))
   }
 
@@ -81,12 +85,17 @@ export function useSocketConnection(input: {
     isSessionReady = false
     socket.emit('client:hello', {
       userId: input.getUserId(),
-      deviceId: input.deviceId
+      deviceId: input.deviceId,
+      localOnly: localTransportPaused
     })
   }
 
   function setLocalTransportPaused(enabled: boolean): void {
     localTransportPaused = enabled
+
+    if (socket?.connected && isSessionReady) {
+      socket.emit('client:mode', { localOnly: enabled })
+    }
 
     if (enabled) {
       input.onConnectionLabel(

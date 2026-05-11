@@ -1,11 +1,13 @@
 import type { Server, Socket } from 'socket.io'
-import type { ChatEvent, DeviceId, MemberChangedPayload, UserId } from '../../shared/types.js'
+import type { ChatEvent, DeviceId, MemberChangedPayload, PeerDirectorySnapshot, UserId } from '../../shared/types.js'
 import type { ChatEventService } from '../services/ChatEventService.js'
 import { serverConfig } from '../config.js'
 
 interface ClientSession {
   userId: UserId
   deviceId: DeviceId
+  localOnly: boolean
+  lastSeenAt: string
 }
 
 export interface SocketEventEmitter {
@@ -77,6 +79,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
     if (event.type === 'chat.created') {
       joinActiveMembers(event.chatId)
       emitEventToActiveMembers(event)
+      broadcastPeerDirectories()
       return
     }
 
@@ -84,6 +87,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       const payload = event.payload as MemberChangedPayload
       joinUserToChat(payload.memberId, event.chatId)
       emitEventToActiveMembers(event)
+      broadcastPeerDirectories()
       return
     }
 
@@ -91,6 +95,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       const payload = event.payload as MemberChangedPayload
       emitEventToActiveMembers(event, [payload.memberId])
       leaveUserFromChat(payload.memberId, event.chatId)
+      broadcastPeerDirectories()
       return
     }
 
@@ -99,6 +104,41 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
 
   function presenceSnapshot(): Record<UserId, boolean> {
     return Object.fromEntries([...userSockets.keys()].map((userId) => [userId, true]))
+  }
+
+  function peerDirectoryForUser(userId: UserId): PeerDirectorySnapshot {
+    const peers = [...new Set([...sessions.values()].map((session) => session.userId))]
+      .filter((peerUserId) => peerUserId !== userId && service.usersShareActiveChat(userId, peerUserId))
+      .map((peerUserId) => {
+        const peerSessions = [...sessions.values()].filter((session) => session.userId === peerUserId)
+        const lastSeenAt = peerSessions
+          .map((session) => session.lastSeenAt)
+          .sort()
+          .at(-1) ?? new Date().toISOString()
+
+        return {
+          userId: peerUserId,
+          deviceIds: [...new Set(peerSessions.map((session) => session.deviceId))],
+          isOnline: peerSessions.length > 0,
+          isLocalOnly: peerSessions.some((session) => session.localOnly),
+          lastSeenAt
+        }
+      })
+
+    return { peers, generatedAt: new Date().toISOString() }
+  }
+
+  function emitPeerDirectory(userId: UserId): void {
+    emitToUser(userId, 'peer:directory', peerDirectoryForUser(userId))
+  }
+
+  function broadcastPeerDirectories(): void {
+    for (const userId of userSockets.keys()) emitPeerDirectory(userId)
+  }
+
+  function broadcastPresenceAndPeerDirectories(): void {
+    io.emit('presence:update', presenceSnapshot())
+    broadcastPeerDirectories()
   }
 
   function requireSession(socket: Socket): ClientSession {
@@ -114,20 +154,25 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       centralUrl: serverConfig.centralUrl ?? null
     })
 
-    socket.on('client:hello', ({ userId, deviceId }: ClientSession) => {
+    socket.on('client:hello', ({ userId, deviceId, localOnly }: ClientSession) => {
       const previousSession = sessions.get(socket.id)
       if (previousSession?.userId && previousSession.userId !== userId) {
         removeUserSocket(previousSession.userId, socket.id)
       }
 
-      sessions.set(socket.id, { userId, deviceId })
+      sessions.set(socket.id, {
+        userId,
+        deviceId,
+        localOnly: Boolean(localOnly),
+        lastSeenAt: new Date().toISOString()
+      })
       addUserSocket(userId, socket.id)
 
       const chats = service.listChats(userId)
       for (const chat of chats) socket.join(chat.id)
 
       socket.emit('chat:list', chats)
-      io.emit('presence:update', presenceSnapshot())
+      broadcastPresenceAndPeerDirectories()
     })
 
     socket.on('event:publish', (event: ChatEvent, callback?: (response: unknown) => void) => {
@@ -162,6 +207,14 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       }
     })
 
+    socket.on('client:mode', ({ localOnly }: { localOnly?: unknown }) => {
+      const session = requireSession(socket)
+      session.localOnly = Boolean(localOnly)
+      session.lastSeenAt = new Date().toISOString()
+      sessions.set(socket.id, session)
+      broadcastPeerDirectories()
+    })
+
     socket.on('peer:signal', ({ toUserId, signal }: { toUserId?: unknown; signal?: unknown }) => {
       const session = requireSession(socket)
       if (typeof toUserId !== 'string') return
@@ -179,7 +232,7 @@ export function registerSocketHandlers(io: Server, service: ChatEventService): S
       const session = sessions.get(socket.id)
       sessions.delete(socket.id)
       if (session) removeUserSocket(session.userId, socket.id)
-      io.emit('presence:update', presenceSnapshot())
+      broadcastPresenceAndPeerDirectories()
     })
   })
 

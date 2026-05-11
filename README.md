@@ -2,10 +2,9 @@
 
 A chat prototype for field teams who need to keep working when connectivity becomes unreliable.
 
-Built with Vue 3, TypeScript, Express, Socket.IO, SQLite, IndexedDB recovery,
-helper-node sync, and peer-assisted WebRTC fallback, the project explores how
-chat messages can survive outages, browser restarts, temporary helper nodes,
-and later central synchronisation.
+Durable Chat Relay uses Vue 3, TypeScript, Express, Socket.IO, SQLite,
+IndexedDB recovery, helper-node sync, and peer-assisted WebRTC fallback to keep
+chat actions recoverable before they reach the central server.
 
 This project is a rethinking of an older chat system I built while
 self-employed from **Feb 2021 to Feb 2022**. The original project used a Vue
@@ -13,12 +12,9 @@ chat widget, a Node.js Socket.IO gateway, service-worker notifications, and a
 separate persistence backend. This version keeps the useful idea behind that
 work, then rebuilds it as a clearer modern architecture.
 
-The aim is not to claim secure enterprise messaging. The aim is to show a
-practical durable-chat design that can support normal central delivery,
-temporary helper nodes, browser-durable storage, recovery dumps, and
-peer-assisted fallback. The architecture is ready to be connected to real
-authentication and authorization, but this project currently uses demo user
-switching and demo-auth headers.
+This is a resilience prototype, not a production-secure messaging platform. It
+uses demo user switching and demo-auth headers so the focus stays on event
+recovery, helper sync, browser storage, and peer fallback.
 
 ## Core Idea
 
@@ -61,6 +57,7 @@ Recovery
 - One-computer local-only demo mode for IndexedDB recovery and retry
 - Canonical direct-chat pair keys to prevent duplicate 1:1 chats
 - WebRTC data-channel event replication between already-signaled chat peers
+- Central/helper peer directory for active shared-chat peers, including local-only tabs
 - Socket.IO peer signaling while central/helper connectivity is available
 - Helper sync push/pull with simple exponential backoff
 - Tests for persistence, idempotency, helper sync, IndexedDB, peer routing,
@@ -161,9 +158,11 @@ The local-only flag is kept in `sessionStorage`, so a refreshed tab stays in
 local-only mode until **Reconnect this tab** is clicked.
 
 While local-only, another demo user's window receives the message before
-reconnect only if a real WebRTC peer channel is already open. Same-browser
-local tab broadcasting is scoped to the same selected demo user and is not used
-as a cross-user delivery shortcut.
+reconnect only if a real WebRTC peer channel is already open. The server sends
+a peer directory while users are connected, so shared-chat users can prepare
+peer links before they pause central/helper chat delivery. Same-browser local
+tab broadcasting is scoped to the same selected demo user and is not used as a
+cross-user delivery shortcut.
 
 For the full script, including duplicate direct-chat prevention, notifications,
 recovery dumps, helper-node sync, and WebRTC visibility, see
@@ -200,20 +199,37 @@ u-anna:u-denis
 That lets the client and server prevent accidental duplicate 1:1 chats during
 retry, helper sync, peer recovery, or recovery import.
 
+
+## Scope of Local Features
+
+Some features are intentionally local to one browser, tab, or selected demo user.
+
+- **IndexedDB** stores events for the current browser profile. Other users cannot recover those events unless they are synced, peer-replicated, or exported/imported through a recovery dump.
+- **Local-only mode** affects the current tab. It pauses central/helper chat delivery for that tab, but the server continues running and may still support peer directory updates and WebRTC signaling.
+- **BroadcastChannel** only coordinates tabs from the same origin and selected demo user. It is not cross-user delivery.
+- **Notification permission** belongs to the current browser/site permission state.
+- **API override** is saved in this browser's `localStorage` and does not affect other users.
+- **WebRTC peer fallback** only works for already-signaled active chat peers. It does not discover closed browsers or unknown users.
+
+## Data Security Model
+
+This project focuses on resilience and recovery rather than production security. Browser IndexedDB records, helper-node sync payloads, peer events, and recovery dumps are treated as recovery inputs, not trusted official history.
+
+In a production version, the central server would validate event schemas, authenticated identity, chat membership, action permissions, and signed device events before accepting anything from IndexedDB, helper sync, WebRTC, or recovery dump import. If a user edited IndexedDB or changed a dump file, the modified event should be rejected unless it has a valid signature and passes server-side checks.
+
 ## Known Limits
 
 - Demo authentication only.
 - SQLite is used for simplicity and local runnability.
 - Helper discovery is manual.
-- WebRTC requires peers to be signaled before the outage.
+- WebRTC requires peers to be signaled before the outage; the central/helper peer directory helps prepare those links while users are connected.
 - Manual QR/code signaling is future work.
 - Production security, access control, and encryption would need more work.
 - REST sync and recovery import are demo-trusted replication paths.
 
 ## Why This Matters
 
-The interesting part is not that this is a chat app. The interesting part is
-the failure model.
+Most chat demos assume the server is available. This project starts from a different assumption: people may still need to write messages while the central connection is unstable.
 
 The design assumes that connectivity can fail at several layers:
 

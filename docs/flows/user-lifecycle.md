@@ -7,10 +7,11 @@
 3. App gets or creates a browser `deviceId`.
 4. App loads demo users from server if reachable, or cached users from IndexedDB if not.
 5. App connects to Socket.IO with `client:hello`.
-6. Server stores the socket session as `{ userId, deviceId }`.
+6. Server stores the socket session as `{ userId, deviceId, localOnly }`.
 7. Server returns `chat:list` for the selected user.
-8. App caches visible chats/messages in IndexedDB.
-9. App retries pending local events after the socket is connected.
+8. Server sends a peer directory for online/local-only users who share active chats with this user.
+9. App caches visible chats/messages in IndexedDB.
+10. App retries pending local events after the socket is connected.
 
 Expected UI:
 
@@ -24,8 +25,9 @@ Expected UI:
 2. Current user id is stored in `localStorage`.
 3. Socket reconnects or sends a new `client:hello`.
 4. Server joins the socket to that user's active chat rooms.
-5. App refreshes chat list and active messages for the new user.
-6. Peer targets are recalculated from the new user's chats and online users.
+5. Server recalculates that user's peer directory.
+6. App refreshes chat list and active messages for the new user.
+7. Peer targets are recalculated from the server peer directory and the new user's active chat members.
 
 Important:
 

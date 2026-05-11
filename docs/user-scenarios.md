@@ -110,17 +110,18 @@ If Denis was local-only instead, Anna still sees nothing until Denis syncs.
 ## WebRTC Peer Fallback
 
 1. Denis and Anna are online long enough for central/helper Socket.IO to exchange WebRTC signals.
-2. A peer data channel opens between them.
-3. Denis enters local-only mode or loses central/helper transport while the peer channel remains open.
-4. Denis sends a message in a chat that includes Anna.
-5. The event is sent only to peers who are active members of that event’s chat.
-6. Anna validates that she knows the chat and is a member before saving the peer event.
-7. Anna ACKs the stored event over the data channel.
-8. If Anna is connected to central/helper, she syncs Denis' original event.
-9. When peers reconnect, they exchange event summaries and request missing event IDs.
-10. Missing events are sent back as batches.
-11. Anna can see the peer-replicated message before Denis reconnects.
-12. Later, if Denis also syncs the same event, central deduplicates by `eventId`.
+2. The central/helper server sends a peer directory for shared-chat users.
+3. A peer data channel opens between them.
+4. Denis enters local-only mode or loses central/helper transport while the peer channel remains open.
+5. Denis sends a message in a chat that includes Anna.
+6. The event is sent only to peers who are active members of that event’s chat.
+7. Anna validates that she knows the chat and is a member before saving the peer event.
+8. Anna ACKs the stored event over the data channel.
+9. If Anna is connected to central/helper, she syncs Denis' original event.
+10. When peers reconnect, they exchange event summaries and request missing event IDs.
+11. Missing events are sent back as batches.
+12. Anna can see the peer-replicated message before Denis reconnects.
+13. Later, if Denis also syncs the same event, central deduplicates by `eventId`.
 
 Expected UI:
 
@@ -128,9 +129,19 @@ Expected UI:
 - `Peer fallback: sent to 1 peer` means the last local-only send used WebRTC
 - `Peer fallback: no open peer channel` means the message waits for later sync
 
+
+Prepared peer-directory case:
+
+1. Denis opens a chat with Anna while central/helper signaling is available.
+2. Denis switches to local-only mode, but his socket still advertises him as a local-only shared-chat peer.
+3. Anna opens a chat with Kate and later also switches to local-only mode.
+4. Kate sends a group message in a chat that includes Denis.
+5. Because the central/helper server had already shared a peer directory, Kate can target Denis directly if their peer link is open, or the event can travel through a valid shared-chat peer who is also a member of that event chat.
+6. Without this peer directory, WebRTC fallback would depend too much on the chat each user happened to open before the outage.
+
 What WebRTC does not do:
 
-- it does not magically discover offline users
+- it does not automatically discover closed browsers or unknown users
 - it does not wake closed browsers
 - it does not send Denis-Anna chat events to Mark
 - it does not replace central reconciliation
@@ -176,7 +187,7 @@ Current limitation:
 
 Membership changes are centrally validated. Peer/local outage mode can carry
 events, but production-grade membership conflict rules would need stronger
-authorization and signed events.
+authorisation and signed events.
 
 ## Read Receipts
 
@@ -223,7 +234,7 @@ require signed events or stronger trust boundaries.
 
 This project is a demo. It shows resilience mechanics, not secure enterprise
 messaging. The architecture can be connected to real authentication and
-authorization, but the current implementation uses demo user switching and
+authorisation, but the current implementation uses demo user switching and
 demo-auth headers.
 
 Current demo trust model:
@@ -237,7 +248,7 @@ Current demo trust model:
 Production requirements:
 
 - real authentication
-- authorization per chat/action
+- authorisation per chat/action
 - signed or otherwise verifiable events
 - stricter validation of sync/recovery payloads
 - encrypted WebRTC and stored message payload policy
