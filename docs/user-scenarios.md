@@ -274,3 +274,16 @@ Production requirements:
 | “Can WebRTC deliver to users who were never online?” | No. It needs already-established signaling. |
 | “Can duplicate direct chats happen?” | Local duplicates can happen offline, but central remaps by pair key. |
 | “What if central receives the same event twice?” | It stores one copy by `eventId`. |
+
+
+Prepared peer-directory case with user switching and notification focus:
+
+1. Denis opens Anna and then switches to local-only mode.
+2. Anna opens Kate and then switches to local-only mode.
+3. The Kate browser window is changed to Ivan.
+4. The app clears Kate's old peer state, updates the URL/user identity for that existing browser window, announces the new Ivan client state to the service worker, and rebuilds Ivan's peer targets.
+5. Denis sends a message to a chat where Ivan is a member.
+6. Ivan's existing browser window should receive or recover the event without forcing a second Ivan window to be opened.
+7. If a browser notification is clicked, the service worker should focus the already-open Ivan window rather than opening a new app window, because the switched tab has announced itself as Ivan.
+
+This matters because a demo browser window can change identity. The URL, service-worker client state, socket session and WebRTC peer graph must all move to the new selected user together.

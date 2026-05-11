@@ -129,7 +129,7 @@ What to point out:
 | Visible behaviour | Technical activity |
 |---|---|
 | Browser notification appears | Vue posts a foreground notification through the worker. |
-| Notification click focuses/opens app | Worker sends `OPEN_CHAT` or opens URL with `?chat=...`. |
+| Notification click focuses/opens app | Worker focuses a matching user window using client state / `?user=...`, sends `OPEN_CHAT`, or opens `?chat=...&user=...` if no matching window exists. |
 | Chat opens after click | Browser notification state links back to Vue state. |
 
 ## Recovery Dump

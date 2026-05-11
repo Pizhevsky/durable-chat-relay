@@ -45,7 +45,8 @@ export function useDurableChatApp() {
 
   const browserActions = createChatBrowserActions({
     state,
-    openChat
+    openChat,
+    ensureUser: changeUser
   })
 
   const socket = useSocketConnection({
@@ -144,6 +145,7 @@ export function useDurableChatApp() {
     syncPeerTargets()
     await push.initialise()
     browserActions.bindServiceWorkerMessages()
+    browserActions.syncUserIdentity(state.currentUserId.value)
     browserActions.openChatFromUrlIfPossible()
     await outbox.refreshPendingCount()
   }
@@ -184,6 +186,7 @@ export function useDurableChatApp() {
 
     peerReplication?.resetForUserChange()
     state.setCurrentUser(userId)
+    browserActions.syncUserIdentity(userId)
     socket.reconnectUser()
     await persistence.refreshChats()
     syncPeerTargets()

@@ -174,3 +174,10 @@ Central marks accepted events as central-synced
 Browser receives official sync result
 Conflicts are shown clearly
 ```
+
+
+## User-switched windows and notifications
+
+A second user-switch issue can happen when a window changes from Kate to Ivan after other peers have already entered local-only mode. A peer event may be recoverable, but a browser notification could open a new Ivan window if the service worker still sees the old Kate URL.
+
+The app handles this by updating the URL `user` parameter and announcing the current selected user to the service worker whenever the demo user changes. Notification clicks can then focus the existing Ivan window, and the existing tab can open the relevant chat rather than relying on a new app instance.

@@ -76,7 +76,7 @@ The service-worker bridge exists. Real backend Web Push requires VAPID configura
 2. Service worker closes the notification.
 3. Worker checks for existing app windows.
 4. If a window exists, worker focuses it.
-5. Worker posts `{ type: 'OPEN_CHAT', chatId }` to the focused window.
+5. Worker posts `{ type: 'OPEN_CHAT', chatId, userId }` to the focused window.
 6. Vue app opens the chat from the message.
 7. If no window exists, worker opens `/?chat=<chatId>`.
 
@@ -121,3 +121,10 @@ Recovery cannot restore:
 - incognito storage after window close
 - events that were never saved
 - another user's closed-browser local data
+
+
+## User-switched browser windows
+
+A demo window may start as Kate and later become Ivan. The Vue app now updates the URL user parameter and announces `{ type: 'CLIENT_STATE', userId }` to the service worker after initial load and after every demo user switch.
+
+When a notification is clicked, the worker first tries to match an open client by that announced user state, then falls back to the `?user=` URL parameter. This avoids opening a second Ivan window when an existing switched window is already representing Ivan.

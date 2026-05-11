@@ -1,3 +1,5 @@
+const clientStates = new Map()
+
 function normaliseNotificationData(event) {
   if (event.type === 'push') {
     return event.data ? event.data.json() : {}
@@ -37,6 +39,12 @@ self.addEventListener('push', (event) => {
 })
 
 self.addEventListener('message', (event) => {
+  const data = event.data || {}
+  if (data.type === 'CLIENT_STATE') {
+    rememberClientState(event.source, data)
+    return
+  }
+
   event.waitUntil(showChatNotification(event))
 })
 
@@ -67,8 +75,24 @@ function notificationTargetUrl(chatId, userId) {
   return query ? `/?${query}` : '/'
 }
 
+function rememberClientState(source, data) {
+  if (!source || !source.id || typeof data.userId !== 'string') return
+  clientStates.set(source.id, {
+    userId: data.userId,
+    url: typeof data.url === 'string' ? data.url : '',
+    updatedAt: Date.now()
+  })
+}
+
 function matchingClient(clientList, userId) {
   if (!userId) return clientList.find((client) => 'focus' in client)
+
+  const stateMatch = clientList.find((client) => {
+    if (!('focus' in client)) return false
+    const state = clientStates.get(client.id)
+    return state?.userId === userId
+  })
+  if (stateMatch) return stateMatch
 
   return clientList.find((client) => {
     if (!('focus' in client)) return false

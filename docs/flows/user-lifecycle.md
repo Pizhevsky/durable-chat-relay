@@ -36,6 +36,7 @@ Important:
 - this is demo user switching, not real authentication
 - a production app must replace it with real auth/session identity
 - user switching must reset peer state, otherwise a browser window that was Kate can keep stale peer links after it becomes Ivan
+- the app also updates the URL `user` parameter and announces the new client state to the service worker, so notification clicks focus the existing switched window instead of opening a second one
 
 ## Refresh
 
