@@ -5,6 +5,11 @@ import { localDb, pendingEvents, saveLocalEvent } from '../../client/src/storage
 import type { ChatEvent, SyncResponse } from '../../shared/types'
 import { chatCreatedEvent, messageCreatedEvent } from '../helpers/chatEvents'
 
+function centralSynced(event: ChatEvent): ChatEvent {
+  return { ...event, syncStatus: 'central-synced' }
+}
+
+
 describe('useOutboxSync', () => {
   beforeEach(async () => {
     await localDb.delete()
@@ -20,7 +25,7 @@ describe('useOutboxSync', () => {
       getUserId: () => 'u-denis',
       publishOnline: vi.fn(async (event: ChatEvent) => {
         calls.push('publish-online')
-        return { ...event, syncStatus: 'central-synced' }
+        return centralSynced(event)
       }),
       syncReplicated: vi.fn(),
       onEventConfirmed: vi.fn(),
@@ -41,9 +46,9 @@ describe('useOutboxSync', () => {
     const item = messageCreatedEvent()
     await saveLocalEvent(item)
 
-    const publishOnline = vi.fn()
+    const publishOnline = vi.fn(async (event: ChatEvent): Promise<ChatEvent> => centralSynced(event))
       .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({ ...item, syncStatus: 'central-synced' })
+      .mockResolvedValueOnce(centralSynced(item))
 
     const outbox = useOutboxSync({
       getUserId: () => 'u-denis',
@@ -78,12 +83,9 @@ describe('useOutboxSync', () => {
     await saveLocalEvent(localChat)
     await saveLocalEvent(localMessage)
 
-    const publishOnline = vi.fn()
+    const publishOnline = vi.fn(async (eventToPublish: ChatEvent): Promise<ChatEvent> => centralSynced(eventToPublish))
       .mockResolvedValueOnce(acceptedChat)
-      .mockImplementationOnce(async (eventToPublish: ChatEvent) => ({
-        ...eventToPublish,
-        syncStatus: 'central-synced'
-      }))
+      .mockImplementationOnce(async (eventToPublish: ChatEvent): Promise<ChatEvent> => centralSynced(eventToPublish))
 
     const outbox = useOutboxSync({
       getUserId: () => 'u-denis',
@@ -129,10 +131,7 @@ describe('useOutboxSync', () => {
     await saveLocalEvent(ivanMessage)
 
     const pendingCount = vi.fn()
-    const publishOnline = vi.fn(async (eventToPublish: ChatEvent): Promise<ChatEvent> => ({
-      ...eventToPublish,
-      syncStatus: 'central-synced'
-    }))
+    const publishOnline = vi.fn(async (eventToPublish: ChatEvent): Promise<ChatEvent> => centralSynced(eventToPublish))
 
     const outbox = useOutboxSync({
       getUserId: () => 'u-ivan',
@@ -174,15 +173,12 @@ describe('useOutboxSync', () => {
       updatedAt: denisPeerMessage.createdAt
     })
 
-    const publishOnline = vi.fn()
+    const publishOnline = vi.fn(async (event: ChatEvent): Promise<ChatEvent> => centralSynced(event))
     const syncReplicated = vi.fn(async (events: ChatEvent[]): Promise<SyncResponse> => ({
       accepted: events.map((event) => event.eventId),
       duplicates: [],
       conflicts: [],
-      serverEvents: events.map((event) => ({
-        ...event,
-        syncStatus: 'central-synced'
-      })),
+      serverEvents: events.map((event) => centralSynced(event)),
       nodeRole: 'central' as const,
       nodeId: 'central-demo'
     }))
@@ -228,15 +224,12 @@ describe('useOutboxSync', () => {
       updatedAt: denisHelperMessage.createdAt
     })
 
-    const publishOnline = vi.fn()
+    const publishOnline = vi.fn(async (event: ChatEvent): Promise<ChatEvent> => centralSynced(event))
     const syncReplicated = vi.fn(async (events: ChatEvent[]): Promise<SyncResponse> => ({
       accepted: events.map((event) => event.eventId),
       duplicates: [],
       conflicts: [],
-      serverEvents: events.map((event) => ({
-        ...event,
-        syncStatus: 'central-synced'
-      })),
+      serverEvents: events.map((event) => centralSynced(event)),
       nodeRole: 'central' as const,
       nodeId: 'central-demo'
     }))

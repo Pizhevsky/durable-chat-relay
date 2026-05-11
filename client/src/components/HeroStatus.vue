@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import type { ChatApp } from '../chat/composables/useChatApp'
-import { clientConfig } from '../config/clientConfig'
+import { shortDeviceId } from '../utils/deviceLabels'
 
 defineProps<{
   app: ChatApp
 }>()
 
-function shortDeviceId(deviceId: string): string {
-  const length = clientConfig.deviceIdPreviewLength
-  return deviceId.length > length ? `${deviceId.slice(0, length)}...` : deviceId
-}
 </script>
 
 <template>

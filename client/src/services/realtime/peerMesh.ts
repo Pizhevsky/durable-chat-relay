@@ -12,6 +12,7 @@ import { iceCandidate, sessionDescription, supportsWebRtc } from './peerSignals'
 import type { PeerConnectionState, PeerDataMessage, PeerMesh, PeerMeshInput } from './peerTypes'
 import { createSeenEventCache } from './seenEventCache'
 import { clientConfig } from '../../config/clientConfig'
+import { shortDeviceId } from '../../utils/deviceLabels'
 
 export function createPeerMesh(input: PeerMeshInput): PeerMesh {
   const peers = new Map<UserId, PeerConnectionState>()
@@ -195,7 +196,7 @@ export function createPeerMesh(input: PeerMeshInput): PeerMesh {
       sendMissingEvents(peer, data.eventIds).catch(() => undefined)
     }
     if (data.type === 'event:ack' && data.eventId && data.deviceId) {
-      input.onStatus?.(`Peer ACK received: ${data.eventId}`)
+      input.onStatus?.(`Peer ACK received from ${shortDeviceId(data.deviceId)}`)
       input.onPeerAck?.(data.eventId, data.deviceId)
     }
   }
