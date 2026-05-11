@@ -46,23 +46,6 @@ export function syncStatusLabel(status?: EventSyncStatus): string {
   }
 }
 
-export function deliveryPathLabel(status?: EventSyncStatus): string {
-  switch (status) {
-    case 'central-synced':
-      return 'Delivered through central'
-    case 'helper-synced':
-      return 'Stored through helper'
-    case 'peer-replicated':
-      return 'Replicated to peer'
-    case 'local':
-      return 'Saved in this browser'
-    case 'conflict':
-      return 'Needs review'
-    default:
-      return 'Saved, waiting to send'
-  }
-}
-
 export function syncStatusClass(status?: EventSyncStatus): string {
   switch (status) {
     case 'central-synced':
