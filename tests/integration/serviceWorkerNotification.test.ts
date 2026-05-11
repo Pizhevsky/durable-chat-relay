@@ -156,6 +156,61 @@ describe('service-worker notification integration', () => {
     expect(openWindow).not.toHaveBeenCalled()
   })
 
+
+  it('ignores stale announced client state before matching a notification click', async () => {
+    const workerSource = readFileSync(resolve(process.cwd(), 'client/worker.js'), 'utf8')
+    const handlers = new Map<string, (event: WorkerEvent) => void>()
+    let now = 0
+    const staleClient = {
+      id: 'client-old-ivan-state',
+      url: 'http://localhost:1234/?user=u-kate',
+      focus: vi.fn(),
+      postMessage: vi.fn()
+    }
+    const openWindow = vi.fn()
+    const context = {
+      self: {
+        registration: { showNotification: vi.fn() },
+        skipWaiting: vi.fn(),
+        clients: { claim: vi.fn() },
+        addEventListener: (type: string, handler: (event: WorkerEvent) => void) => {
+          handlers.set(type, handler)
+        }
+      },
+      clients: {
+        matchAll: vi.fn(() => Promise.resolve([staleClient])),
+        openWindow
+      },
+      URL,
+      URLSearchParams,
+      Date: { now: () => now }
+    }
+
+    vm.runInNewContext(workerSource, context)
+    const messageHandler = handlers.get('message')
+    const clickHandler = handlers.get('notificationclick')
+    if (!messageHandler || !clickHandler) throw new Error('worker handlers were not registered')
+
+    messageHandler({
+      data: { type: 'CLIENT_STATE', userId: 'u-ivan', url: 'http://localhost:1234/?user=u-ivan' },
+      source: { id: 'client-old-ivan-state' }
+    })
+    now = 6 * 60 * 1000
+
+    const waitUntilPromises: Promise<unknown>[] = []
+    clickHandler({
+      notification: {
+        data: { chatId: 'chat-denis-ivan', userId: 'u-ivan' },
+        close: vi.fn()
+      },
+      waitUntil: (promise) => waitUntilPromises.push(promise)
+    })
+    await Promise.all(waitUntilPromises)
+
+    expect(staleClient.focus).not.toHaveBeenCalled()
+    expect(openWindow).toHaveBeenCalledWith('/?chat=chat-denis-ivan&user=u-ivan')
+  })
+
 })
 
 interface WorkerEvent {

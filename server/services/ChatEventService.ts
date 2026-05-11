@@ -10,6 +10,7 @@ import type {
 import { AppError } from '../errors.js'
 import { ChatEventProjector } from './ChatEventProjector.js'
 import { ChatReadModel } from './ChatReadModel.js'
+import { validateChatEvent } from './ChatEventValidator.js'
 import {
   canonicalDirectPairKey,
   normaliseIncomingStatus,
@@ -50,6 +51,8 @@ export class ChatEventService {
   }
 
   applyEvent(event: ChatEvent): { event: ChatEvent; inserted: boolean } {
+    validateChatEvent(event)
+
     const existing = this.db.prepare('SELECT event_id FROM events WHERE event_id = ?').get(event.eventId)
     if (existing) {
       return { event: this.getEventById(event.eventId), inserted: false }

@@ -35,6 +35,7 @@ interface OutboxSyncInput {
     original: ChatEvent
   ) => ConfirmedEventResult | void | Promise<ConfirmedEventResult | void>
   onPendingCount: (count: number) => void
+  onEventSaved?: (event: ChatEvent) => void | Promise<void>
 }
 
 export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
@@ -43,6 +44,7 @@ export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
   async function saveAndSend(event: ChatEvent): Promise<void> {
     await saveLocalEvent(event)
     await refreshPendingCount()
+    await input.onEventSaved?.(event)
 
     try {
       const confirmed = await input.publishOnline(event)

@@ -1,4 +1,5 @@
 const clientStates = new Map()
+const CLIENT_STATE_TTL_MS = 5 * 60 * 1000
 
 function normaliseNotificationData(event) {
   if (event.type === 'push') {
@@ -76,6 +77,7 @@ function notificationTargetUrl(chatId, userId) {
 }
 
 function rememberClientState(source, data) {
+  pruneClientStates()
   if (!source || !source.id || typeof data.userId !== 'string') return
   clientStates.set(source.id, {
     userId: data.userId,
@@ -85,6 +87,7 @@ function rememberClientState(source, data) {
 }
 
 function matchingClient(clientList, userId) {
+  pruneClientStates(clientList)
   if (!userId) return clientList.find((client) => 'focus' in client)
 
   const stateMatch = clientList.find((client) => {
@@ -102,4 +105,15 @@ function matchingClient(clientList, userId) {
       return false
     }
   })
+}
+
+function pruneClientStates(clientList) {
+  const now = Date.now()
+  const currentClientIds = clientList ? new Set(clientList.map((client) => client.id)) : null
+
+  for (const [clientId, state] of clientStates.entries()) {
+    const isExpired = now - state.updatedAt > CLIENT_STATE_TTL_MS
+    const isClosed = currentClientIds ? !currentClientIds.has(clientId) : false
+    if (isExpired || isClosed) clientStates.delete(clientId)
+  }
 }

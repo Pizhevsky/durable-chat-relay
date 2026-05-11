@@ -11,6 +11,32 @@ describe('useOutboxSync', () => {
     await localDb.open()
   })
 
+
+  it('saves a local event before any peer or online delivery hook runs', async () => {
+    const item = messageCreatedEvent({ eventId: 'device-a:save-before-peer' })
+    const calls: string[] = []
+
+    const outbox = useOutboxSync({
+      getUserId: () => 'u-denis',
+      publishOnline: vi.fn(async (event: ChatEvent) => {
+        calls.push('publish-online')
+        return { ...event, syncStatus: 'central-synced' }
+      }),
+      syncReplicated: vi.fn(),
+      onEventConfirmed: vi.fn(),
+      onPendingCount: vi.fn(),
+      onEventSaved: vi.fn(async (event: ChatEvent) => {
+        const saved = await localDb.events.get(event.eventId)
+        calls.push(saved ? 'saved-before-peer' : 'missing-before-peer')
+      })
+    })
+
+    await outbox.saveAndSend(item)
+
+    expect(calls).toEqual(['saved-before-peer', 'publish-online'])
+  })
+
+
   it('flushes a failed local event after connectivity returns', async () => {
     const item = messageCreatedEvent()
     await saveLocalEvent(item)

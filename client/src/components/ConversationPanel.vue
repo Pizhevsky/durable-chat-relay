@@ -5,6 +5,7 @@ import {
   EMPTY_READ_RECEIPT_LABEL,
   participantDescription as describeParticipants,
   readReceiptLabel,
+  deliveryPathLabel,
   syncStatusClass,
   syncStatusLabel
 } from '../utils/chatLabels'
@@ -84,6 +85,9 @@ function participantDescription(): string {
             <small>{{ formatLocalDateTime(message.createdAt) }} · {{ readLabel(message.readBy) }}</small>
             <span class="sync-badge" :class="syncStatusClass(message.syncStatus)">
               {{ syncStatusLabel(message.syncStatus) }}
+            </span>
+            <span class="delivery-path" :class="syncStatusClass(message.syncStatus)">
+              {{ deliveryPathLabel(message.syncStatus) }}
             </span>
           </div>
         </article>

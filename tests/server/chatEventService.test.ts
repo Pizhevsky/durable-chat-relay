@@ -171,6 +171,38 @@ describe('ChatEventService', () => {
     }))).toThrow(/Member not found or is the group owner/)
   })
 
+
+  it('rejects events whose top-level chatId does not match the payload chatId', () => {
+    const service = createService()
+
+    expect(() => service.applyEvent(baseEvent({
+      chatId: 'chat-top-level',
+      payload: {
+        chatId: 'chat-payload',
+        clientChatId: 'chat-payload',
+        type: 'direct',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    }))).toThrow(/event.chatId must match payload.chatId/)
+  })
+
+  it('rejects malformed message events before projection', () => {
+    const service = createService()
+    service.applyEvent(baseEvent())
+
+    expect(() => service.applyEvent(messageCreatedEvent({
+      eventId: 'device-a:empty-message',
+      chatId: 'chat-1',
+      payload: {
+        chatId: 'chat-1',
+        messageId: 'msg-empty',
+        clientMessageId: 'msg-empty',
+        text: '   '
+      }
+    }))).toThrow(/message text cannot be empty/)
+  })
+
+
   it('marks helper events as helper-synced until central confirms them', () => {
     const service = createService('helper')
     const result = service.applyEvent(baseEvent())

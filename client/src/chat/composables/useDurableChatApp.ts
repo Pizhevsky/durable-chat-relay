@@ -117,6 +117,9 @@ export function useDurableChatApp() {
     },
     onPendingCount: (count) => {
       state.pendingCount.value = count
+    },
+    onEventSaved: async (event) => {
+      if (!socket.isConnected()) publishPeerEvent(event)
     }
   })
   retryPendingAfterConnect = outbox.retryPending
@@ -129,7 +132,6 @@ export function useDurableChatApp() {
     refreshChats: persistence.refreshChats,
     persistVisibleState: persistence.persistVisibleState,
     saveAndSend: async (event) => {
-      if (!socket.isConnected()) publishPeerEvent(event)
       await outbox.saveAndSend(event)
     }
   })

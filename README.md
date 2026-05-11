@@ -215,7 +215,9 @@ Some features are intentionally local to one browser, tab, or selected demo user
 
 This project focuses on resilience and recovery rather than production security. Browser IndexedDB records, helper-node sync payloads, peer events, and recovery dumps are treated as recovery inputs, not trusted official history.
 
-In a production version, the central server would validate event schemas, authenticated identity, chat membership, action permissions, and signed device events before accepting anything from IndexedDB, helper sync, WebRTC, or recovery dump import. If a user edited IndexedDB or changed a dump file, the modified event should be rejected unless it has a valid signature and passes server-side checks.
+The current server validates event shape before storing an event: event type, sync status, matching `event.chatId`/`payload.chatId`, required IDs, message text length, and direct-chat pair-key consistency. The projection layer then checks business rules such as chat membership and group-owner changes.
+
+A production version would go further with real authentication, per-action authorisation, registered device keys, signed events, and optional encrypted recovery dumps. If a user edited IndexedDB or changed a dump file, the modified event should be rejected unless it has a valid signature and passes server-side checks.
 
 ## Known Limits
 
@@ -224,7 +226,7 @@ In a production version, the central server would validate event schemas, authen
 - Helper discovery is manual.
 - WebRTC requires peers to be signaled before the outage; the central/helper peer directory helps prepare those links while users are connected.
 - Manual QR/code signaling is future work.
-- Production security, access control, and encryption would need more work.
+- Production security, signed device events, access control, and encryption would need more work.
 - REST sync and recovery import are demo-trusted replication paths.
 
 ## Why This Matters

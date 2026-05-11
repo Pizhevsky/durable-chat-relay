@@ -99,4 +99,4 @@ The REST sync and recovery endpoints are also intentionally demo-trusted:
 - `POST /api/sync/events` accepts replicated events and preserves their original `actorUserId`.
 - `POST /api/recovery/import` imports event dumps and also preserves original authorship.
 
-That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, authorisation checks, signed events and stricter validation of REST sync, recovery import and WebRTC signaling payloads.
+That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, per-action authorisation checks, signed events, and stronger verification of REST sync, recovery import, and WebRTC signalling payloads. The current prototype validates event shape before projection, but it does not yet prove that a browser-created event was signed by a registered device.
