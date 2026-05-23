@@ -29,13 +29,13 @@ async function onImport(event: Event): Promise<void> {
       Import recovery dump
       <input type="file" accept="application/json" @change="onImport" />
     </label>
-    <p v-if="app.lastError.value" class="error">{{ app.lastError.value }}</p>
+    <p v-if="app.lastError.value" class="error" role="alert">{{ app.lastError.value }}</p>
     <div class="recent-events">
       <div class="event-log-header">
         <h3>Recent event flow</h3>
         <span>Scroll</span>
       </div>
-      <div class="event-log">
+      <div class="event-log" role="log" aria-live="polite" aria-label="Recent event flow">
         <article v-for="event in app.recentEvents.value" :key="event.eventId" class="event-row">
           <strong>{{ event.type }}</strong>
           <span class="event-row-meta">

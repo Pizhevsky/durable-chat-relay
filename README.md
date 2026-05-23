@@ -102,6 +102,7 @@ For the walkthrough, use [`docs/demo-guide.md`](docs/demo-guide.md).
 
 - [`docs/demo-guide.md`](docs/demo-guide.md) shows the one-laptop demo flows.
 - [`docs/architecture.md`](docs/architecture.md) explains the runtime paths and resilience layers.
+- [`docs/flows/README.md`](docs/flows/README.md) documents the behaviour flows behind messaging, sync, recovery, notifications, and user switching.
 - [`docs/oop-design.md`](docs/oop-design.md) explains the code structure and OOP boundaries.
 - [`docs/helper-node.md`](docs/helper-node.md) explains helper responsibilities.
 - [`docs/helper-central-auth.md`](docs/helper-central-auth.md) explains signed helper-to-central sync.
@@ -118,4 +119,4 @@ Laravel project owns:
 Optional central HTTP authority, PostgreSQL event store, PHP 8.x OOP implementation of the central sync contract.
 ```
 
-The helper-to-central sync path is signed with HMAC. Browser demo traffic still uses demo user switching. The browser must not contain helper secrets.
+Helper-to-central sync uses HMAC signed requests. The signing secret stays on the helper server and is not exposed to the Vue browser client. Browser user switching is only for the demo and is not production authentication.

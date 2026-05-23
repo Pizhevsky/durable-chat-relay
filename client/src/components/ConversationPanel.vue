@@ -71,7 +71,14 @@ function participantDescription(): string {
         </span>
       </header>
 
-      <div ref="messagesContainer" class="messages">
+      <div
+        ref="messagesContainer"
+        class="messages"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label="Messages"
+      >
         <article
           v-for="message in app.activeMessages.value"
           :key="message.id"
@@ -90,7 +97,13 @@ function participantDescription(): string {
       </div>
 
       <form class="composer" @submit.prevent="send">
-        <input v-model="messageText" placeholder="Write a message that survives outages..." />
+        <label class="sr-only" for="message-composer">Message</label>
+        <input
+          id="message-composer"
+          v-model="messageText"
+          autocomplete="off"
+          placeholder="Write a message that survives outages..."
+        />
         <button type="submit">Send</button>
       </form>
     </template>

@@ -9,7 +9,7 @@ defineProps<{
 
 <template>
   <aside class="panel chat-list">
-    <h2>Chats</h2>
+    <h2 id="chat-list-title">Chats</h2>
     <div class="chat-list-items">
       <button
         v-for="chat in app.chats.value"
@@ -17,6 +17,8 @@ defineProps<{
         class="chat-row"
         :class="{ active: app.activeChatId.value === chat.id }"
         type="button"
+        :aria-current="app.activeChatId.value === chat.id ? 'true' : undefined"
+        :aria-label="`${chat.title}, ${chat.type} chat with ${chat.members.length} members, ${syncStatusLabel(chat.syncStatus)}`"
         @click="app.openChat(chat.id)"
       >
         <span>{{ chat.title }}</span>

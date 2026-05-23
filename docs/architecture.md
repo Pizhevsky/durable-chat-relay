@@ -88,3 +88,12 @@ central returns -> signed sync, deduplication and projection rebuild official st
 ```
 
 The central server, whether Node or Laravel, deduplicates by `eventId`. The helper owns retry and backoff. The browser owns local recovery before delivery.
+
+## Behaviour flows
+
+For step-by-step runtime behaviour, see:
+
+- [Messaging and sync](flows/messaging-and-sync.md) for chat creation, message delivery, helper sync and cursor pull.
+- [Resilience and failure](flows/resilience-and-failure.md) for local-only mode, helper outage, central outage, direct chat reconciliation and WebRTC fallback.
+- [Notifications and recovery](flows/notifications-and-recovery.md) for notification behaviour and recovery export/import.
+- [User lifecycle](flows/user-lifecycle.md) for demo user switching and peer/session cleanup.

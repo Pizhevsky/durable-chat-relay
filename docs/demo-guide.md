@@ -17,6 +17,8 @@ The demo has three levels:
 
 Use the original Node path first when presenting the project. The Laravel path is an additional central implementation, not a replacement for the original demo.
 
+For the detailed behaviour behind each demo, see [flows/README.md](flows/README.md).
+
 ## Start Clean
 
 Optional, but useful when recording a demo:

@@ -23,7 +23,7 @@ defineProps<{
         live delivery and central recovery.
       </p>
     </div>
-    <div class="status-panel">
+    <div class="status-panel" aria-live="polite">
       <div class="status-group transport-status-grid">
         <h2>Transport</h2>
         <span class="status-pill">{{ app.connectionLabel.value }}</span>

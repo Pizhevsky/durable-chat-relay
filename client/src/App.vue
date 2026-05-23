@@ -33,5 +33,8 @@ const app = useChatApp()
       <strong>{{ app.inAppNotification.value.title }}</strong>
       <span>{{ app.inAppNotification.value.body }}</span>
     </button>
+    <output v-if="app.inAppNotification.value" class="sr-only" aria-live="polite">
+      {{ app.inAppNotification.value.title }}. {{ app.inAppNotification.value.body }}
+    </output>
   </main>
 </template>
