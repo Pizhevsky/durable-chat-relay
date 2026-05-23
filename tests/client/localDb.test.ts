@@ -80,6 +80,7 @@ describe('local IndexedDB outbox', () => {
 
     expect(dump.format).toBe(RECOVERY_DUMP_FORMAT)
     expect(dump.events).toHaveLength(1)
+    expect(dump.checksum).toMatch(/^[a-f0-9]{64}$/)
   })
 
   it('caches chat summaries for browser-only reopening', async () => {

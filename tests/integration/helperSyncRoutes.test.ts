@@ -5,9 +5,10 @@ import { createServer } from 'node:http'
 import { localDb } from '../../client/src/storage/localDb'
 import { serverConfig } from '../../server/config'
 import { registerRoutes } from '../../server/routes'
+import { captureRawBody } from '../../server/security/helperAuth'
 import { startHelperSync } from '../../server/sync/helperSync'
 import type { ChatEvent } from '../../shared/types'
-import { chatCreated, closeServer, createService, listen, restoreConfig } from './helpers'
+import { chatCreated, closeServer, createService, listen, messageCreated, restoreConfig } from '../helpers/integration'
 
 describe('helper-to-central HTTP sync integration', () => {
   beforeEach(async () => {
@@ -27,7 +28,7 @@ describe('helper-to-central HTTP sync integration', () => {
     const central = createService('central')
     const helper = createService('helper')
     const app = express()
-    app.use(express.json())
+    app.use(express.json({ verify: captureRawBody }))
     registerRoutes(app, central.service)
     const httpServer = createServer(app)
     const port = await listen(httpServer)
@@ -72,6 +73,70 @@ describe('helper-to-central HTTP sync integration', () => {
       expect(emitted.map((event) => event.eventId)).toEqual(
         expect.arrayContaining(['central:mark-ivan', 'helper:denis-anna'])
       )
+    } finally {
+      stop()
+      await closeServer(httpServer)
+      central.db.close()
+      helper.db.close()
+    }
+  })
+
+  it('reconciles duplicate direct chats from separate helpers to the central chat id', async () => {
+    const central = createService('central')
+    const helper = createService('helper')
+    const app = express()
+    app.use(express.json({ verify: captureRawBody }))
+    registerRoutes(app, central.service)
+    const httpServer = createServer(app)
+    const port = await listen(httpServer)
+    const centralUrl = `http://127.0.0.1:${port}`
+
+    const centralDirect = chatCreated({
+      eventId: 'helper-a:direct-created',
+      originNodeId: 'helper-a',
+      chatId: 'chat-central-denis-anna',
+      payload: {
+        chatId: 'chat-central-denis-anna',
+        clientChatId: 'chat-central-denis-anna',
+        type: 'direct',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    })
+    const localDuplicate = chatCreated({
+      eventId: 'helper-b:direct-created',
+      originNodeId: 'helper-b',
+      chatId: 'chat-local-denis-anna',
+      payload: {
+        chatId: 'chat-local-denis-anna',
+        clientChatId: 'chat-local-denis-anna',
+        type: 'direct',
+        memberIds: ['u-anna', 'u-denis']
+      }
+    })
+    const localMessage = messageCreated('chat-local-denis-anna', 'Message created before helper reconciliation')
+    const emitted: ChatEvent[] = []
+
+    central.service.applyEvent(centralDirect)
+    helper.service.applyEvent(localDuplicate)
+    helper.service.applyEvent(localMessage)
+    serverConfig.nodeRole = 'helper'
+    serverConfig.nodeId = 'helper-b'
+    serverConfig.centralUrl = centralUrl
+    serverConfig.helperSyncIntervalMs = 1000
+    serverConfig.helperSyncMaxBackoffMs = 2000
+
+    const stop = startHelperSync(helper.service, (event) => emitted.push(event))
+
+    try {
+      await vi.waitFor(() => {
+        expect(helper.service.listChats('u-denis').map((chat) => chat.id)).toContain('chat-central-denis-anna')
+        expect(helper.service.listMessages('chat-central-denis-anna', 'u-denis').map((message) => message.text))
+          .toContain('Message created before helper reconciliation')
+      })
+
+      expect(helper.service.listChats('u-denis').map((chat) => chat.id)).not.toContain('chat-local-denis-anna')
+      expect(helper.service.getPendingCentralSync()).toHaveLength(0)
+      expect(emitted.map((event) => event.chatId)).toContain('chat-central-denis-anna')
     } finally {
       stop()
       await closeServer(httpServer)

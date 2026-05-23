@@ -8,7 +8,7 @@ import type { ChatEvent, ChatId, NodeRole, UserId } from '../../shared/types'
 import {
   chatCreatedEvent,
   messageCreatedEvent
-} from '../helpers/chatEvents'
+} from './chatEvents'
 
 export const originalConfig = { ...serverConfig }
 

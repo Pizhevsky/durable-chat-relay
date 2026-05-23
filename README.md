@@ -1,257 +1,253 @@
 # Durable Chat Relay
 
-A chat prototype for field teams who need to keep working when connectivity becomes unreliable.
+A resilience prototype for field teams who need chat actions to survive unreliable connectivity.
 
-Durable Chat Relay uses Vue 3, TypeScript, Express, Socket.IO, SQLite,
-IndexedDB recovery, helper-node sync, and peer-assisted WebRTC fallback to keep
-chat actions recoverable before they reach the central server.
+The project shows how a browser client, local helper node and central server can keep events recoverable during outages, then reconcile official history through signed, idempotent sync.
 
-This project is a rethinking of an older chat system I built while
-self-employed from **Feb 2021 to Feb 2022**. The original project used a Vue
-chat widget, a Node.js Socket.IO gateway, service-worker notifications, and a
-separate persistence backend. This version keeps the useful idea behind that
-work, then rebuilds it as a clearer modern architecture.
+The main demo is simple: users keep sending messages through a helper while the central server is unavailable. When central returns, the helper syncs pending events, duplicates are ignored, and all clients converge on one chat history.
 
-This is a resilience prototype, not a production-secure messaging platform. It
-uses demo user switching and demo-auth headers so the focus stays on event
-recovery, helper sync, browser storage, and peer fallback.
+This project is a rethinking of an older chat system I built while self-employed from Feb 2021 to Feb 2022. The original project used a Vue chat widget, a Node.js Socket.IO gateway, service-worker notifications, and a separate persistence backend. This version keeps the useful idea behind that work, then rebuilds it as a clearer modern architecture.
 
-## Core Idea
+This is a resilience prototype, not a production-secure messaging platform. It uses demo user switching so the focus stays on event recovery, helper sync, browser storage, signed helper-to-central communication, and peer fallback.
 
-The system is designed for organisations where field offices can appear and
-close several times per month. Installing a permanent server in every office is
-not realistic. Instead, the architecture has several layers of resilience.
+The project can run with its original Node.js central server, or with the separate Laravel 12 and PostgreSQL central server created as an additional backend implementation.
+
+## One Map
 
 ```txt
-Central server available
-  Browser -> central Express/Socket.IO server -> central SQLite event store
+Original standalone demo:
+Vue client -> Node central -> SQLite
 
-Central unavailable, helper available
-  Browser -> lightweight helper node on a responsible user's laptop
-  Helper -> helper SQLite event store -> later central sync
+Helper resilience demo:
+Vue client -> Node helper -> central authority
 
-No central and no helper
-  Browser stores events in IndexedDB
-  Already-signaled browsers can replicate events to known peers through WebRTC
-  Peer fallback is limited to already-signaled active chat members
-
-Recovery
-  Browser/helper uploads event logs to central
-  Central deduplicates events and rebuilds official history
+Laravel integration demo:
+Vue client -> Node helper -> Laravel central -> PostgreSQL
 ```
 
-## What Works
+The important split is:
 
-- Vue 3 + TypeScript frontend
-- Parcel frontend build
-- Express web server
-- Socket.IO realtime transport
-- SQLite persistence with `better-sqlite3`
-- Central mode and helper-node mode
-- Event-based chat model
-- Browser IndexedDB outbox using Dexie
-- Cached users, chats, and messages for browser-only reopening
-- Automatic pending-event retry when Socket.IO reconnects
-- Recovery dump export/import with client-side format validation
-- Service-worker notification bridge and notification-click chat opening
-- One-computer local-only demo mode for IndexedDB recovery and retry
-- Canonical direct-chat pair keys to prevent duplicate 1:1 chats
-- WebRTC data-channel event replication between already-signaled chat peers
-- Central/helper peer directory for active shared-chat peers, including local-only tabs
-- Socket.IO peer signaling while central/helper connectivity is available
-- Helper sync push/pull with simple exponential backoff
-- Tests for persistence, idempotency, helper sync, IndexedDB, peer routing,
-  notifications, and retry flow
+```txt
+local availability != central authority
+```
 
-## Quick Start
+The helper keeps local users working and queues events. Central later decides official history.
 
-Install dependencies:
+## Run A Demo
+
+Standalone original path:
 
 ```bash
 npm install
-```
-
-Run central server and Parcel client:
-
-```bash
 npm run dev
 ```
 
-Open the client:
+Open:
 
 ```txt
 http://localhost:1234
 ```
 
-The API server runs on:
-
 ```txt
-http://localhost:3000
+Vue client :1234 -> Node central :3000 -> SQLite
 ```
 
-Run a helper node:
+Laravel central through helper:
 
 ```bash
-npm run dev:helper
+# in the Laravel repository
+php artisan migrate:fresh --seed
+php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-The helper runs on:
-
-```txt
-http://localhost:3001
+```bash
+# in this repository
+npm run dev:laravel
 ```
 
-Point the dev UI at the helper API without rebuilding:
+Open:
 
 ```txt
 http://localhost:1234?api=http://localhost:3001
 ```
 
-The override is saved in localStorage as `durable-chat-api`. Clear it in
-DevTools or run:
-
-```js
-localStorage.removeItem('durable-chat-api')
+```txt
+Vue client :1234 -> Node helper :3001 -> Laravel central :8000 -> PostgreSQL
 ```
 
-Build and serve production output:
+For the actual walkthroughs, start with `docs/demo-guide.md`. It keeps the original Node central demo first, then the Laravel integration demos.
+
+## Core Idea
+
+The system is designed for organisations where field offices can appear and close several times per month. Installing a permanent server in every office is not realistic. Instead, the architecture has several layers of resilience.
+
+### Central server available
+
+Browser -> central Express/Socket.IO server -> central SQLite event store
+
+When using the additional Laravel central server:
+
+Browser -> local helper node -> Laravel central API -> PostgreSQL event store
+
+### Central unavailable, helper available
+
+Browser -> lightweight helper node on a responsible user's laptop  
+Helper -> helper SQLite event store -> later signed central sync
+
+### No central and no helper
+
+Browser stores events in IndexedDB.  
+Already-signalled browsers can replicate events to known peers through WebRTC.  
+Peer fallback is limited to already-signalled active chat members.
+
+### Recovery
+
+Browser/helper uploads event logs to central.  
+Central verifies signed helper sync where applicable.  
+Central deduplicates events and rebuilds official history.
+
+## What works in this project
+
+- Vue 3 + TypeScript frontend
+- Express and Socket.IO server
+- Node central mode for the original demo path
+- Node helper mode for the Laravel integration path
+- SQLite persistence with `better-sqlite3`
+- Event based chat model
+- Browser IndexedDB outbox using Dexie
+- Cached users, chats and messages for browser reopening
+- Automatic pending event retry when Socket.IO reconnects
+- Recovery dump export/import with client side validation
+- Service worker notification path and notification click chat opening
+- Canonical direct chat pair keys to prevent duplicate 1:1 chats
+- WebRTC data channel replication between already signalled chat peers
+- Peer directory for active shared chat peers, including local only tabs
+- Helper sync push/pull with exponential backoff
+- HMAC signed helper sync requests to central servers
+- Direct chat remapping when several helpers create the same direct chat offline
+
+## Security scope
+
+This prototype includes helper to central request signing for sync traffic, but it does not include full production user authentication, per chat authorization, signed browser events, message encryption or production key management.
+
+## Quick start: original Node central path
+
+Use this when testing the original project by itself:
 
 ```bash
-npm run build
-npm run start
+npm install
+npm run dev
 ```
 
-Run checks:
+Open:
+
+```txt
+http://localhost:1234
+```
+
+This starts:
+
+```txt
+Vue client :1234 -> Node central :3000 -> SQLite
+```
+
+## Quick start: Laravel central integration path
+
+Start the Laravel central server in the Laravel repository:
 
 ```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate:fresh --seed
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Then start the helper and client in this repository:
+
+```bash
+npm install
+npm run dev:laravel
+```
+
+Open:
+
+```txt
+http://localhost:1234?api=http://localhost:3001
+```
+
+This starts:
+
+```txt
+Vue client :1234 -> Node helper :3001 -> Laravel central :8000 -> PostgreSQL
+```
+
+Do not point the Vue app directly at `http://127.0.0.1:8000`. Laravel does not host the Socket.IO endpoint used by the client.
+
+## Helper and central commands
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | original Node central + Vue client |
+| `npm run dev:central` | original Node central only |
+| `npm run dev:helper` | helper connected to original Node central on `:3000` |
+| `npm run helper:laravel` | helper connected to Laravel central on `:8000` |
+| `npm run dev:laravel` | helper connected to Laravel + Vue client |
+| `npm run dev:client` | Vue client only |
+| `npm run reset:demo` | reset demo state helper script |
+
+## Helper to central authorization
+
+Helper sync requests are signed with HMAC SHA 256.
+
+Local demo values:
+
+```env
+DCR_HELPER_SHARED_SECRET=local-dev-helper-secret
+DCR_TRUSTED_HELPER_IDS=helper-demo
+DCR_HELPER_SIGNATURE_TOLERANCE_SECONDS=300
+```
+
+The same signing contract works with:
+
+```txt
+Node helper -> original Node central
+Node helper -> Laravel central
+```
+
+## Integration behaviour to check
+
+The important integration behaviours are:
+
+- helper pushes pending events with a valid signature
+- central rejects unsigned helper sync requests
+- helper pulls missed events with `since` and `limit`
+- pull cursor advances to the last returned sequence, not the database maximum
+- duplicate event retry does not create duplicate projections
+- several helpers creating the same direct chat reconcile to one central chat id
+- pending messages for the losing local chat id are rewritten before retry
+
+## Documentation
+
+- `docs/shared-integration-contract.md` is duplicated in both repositories and defines the integration contract.
+- `docs/architecture.md` explains the original project architecture and how Laravel fits.
+- `docs/helper-node.md` explains helper mode.
+- `docs/helper-central-auth.md` explains signed helper sync.
+- `docs/demo-guide.md` shows both demo paths.
+- `docs/flows/` contains user and resilience flows.
+- `docs/project-positioning.md` explains project scope and limits.
+
+## Local verification
+
+```bash
+npm install
 npm run typecheck
 npm run test
 ```
 
-## Documentation Map
-
-Start here:
-
-- [Architecture](docs/architecture.md): central, helper, browser, peer, and trust boundaries.
-- [Demo Guide](docs/demo-guide.md): the complete one-computer demo script.
-- [User Scenarios](docs/user-scenarios.md): what each user experiences under different conditions.
-- [Runtime Flows](docs/flows/README.md): messaging, sync, notifications, recovery, and lifecycle flows.
-- [WebRTC Peer Mode](docs/webrtc-peer-mode.md): peer protocol, ACKs, limits, and realistic claims.
-- [Helper Node](docs/helper-node.md): how the local helper process is meant to be used.
-- [Project Positioning](docs/project-positioning.md): portfolio framing, limitations, and repo naming.
-- [Full Mesh Roadmap](docs/full-mesh-roadmap.md): remaining peer-mesh work.
-
-## Main Demo
-
-The fastest portfolio demo is:
-
-1. Run `npm run dev`.
-2. Open `http://localhost:1234`.
-3. Open another demo user window from the **One-computer demo** panel.
-4. Create a direct chat and exchange messages.
-5. Click **Simulate local-only tab**.
-6. Send messages while local-only.
-7. Refresh the tab if desired.
-8. Click **Reconnect this tab** and watch pending events flush.
-
-The local-only flag is kept in `sessionStorage`, so a refreshed tab stays in
-local-only mode until **Reconnect this tab** is clicked.
-
-While local-only, another demo user's window receives the message before
-reconnect only if a real WebRTC peer channel is already open. The server sends
-a peer directory while users are connected, so shared-chat users can prepare
-peer links before they pause central/helper chat delivery. Same-browser local
-tab broadcasting is scoped to the same selected demo user and is not used as a
-cross-user delivery shortcut.
-
-For the full script, including duplicate direct-chat prevention, notifications,
-recovery dumps, helper-node sync, and WebRTC visibility, see
-[docs/demo-guide.md](docs/demo-guide.md).
-
-## Key Concepts
-
-Events, not only final rows, are the durable unit:
-
-```txt
-chat.created
-member.added
-member.removed
-message.created
-message.read
-```
-
-Events move through these states:
-
-```txt
-local
-peer-replicated
-helper-synced
-central-synced
-conflict
-```
-
-Direct chats use a canonical pair key built from sorted user IDs:
-
-```txt
-u-anna:u-denis
-```
-
-That lets the client and server prevent accidental duplicate 1:1 chats during
-retry, helper sync, peer recovery, or recovery import.
+For the Laravel integration path, also run the Laravel server and test through `npm run dev:laravel`.
 
 
-## Scope of Local Features
+## SHA-256 recovery checksum
 
-Some features are intentionally local to one browser, tab, or selected demo user.
-
-- **IndexedDB** stores events for the current browser profile. Other users cannot recover those events unless they are synced, peer-replicated, or exported/imported through a recovery dump.
-- **Local-only mode** affects the current tab. It pauses central/helper chat delivery for that tab, but the server continues running and may still support peer directory updates and WebRTC signaling.
-- **BroadcastChannel** only coordinates tabs from the same origin and selected demo user. It is not cross-user delivery.
-- **Notification permission** belongs to the current browser/site permission state.
-- **API override** is saved in this browser's `localStorage` and does not affect other users.
-- **WebRTC peer fallback** only works for already-signaled active chat peers. It does not discover closed browsers or unknown users.
-
-## Data Security Model
-
-This project focuses on resilience and recovery rather than production security. Browser IndexedDB records, helper-node sync payloads, peer events, and recovery dumps are treated as recovery inputs, not trusted official history.
-
-The current server validates event shape before storing an event: event type, sync status, `originDeviceId:eventId` event IDs, ISO 8601 timestamps, matching `event.chatId`/`payload.chatId`, required IDs, message text length, and direct-chat pair-key consistency. The projection layer then checks business rules such as chat membership and group-owner changes.
-
-A production version would go further with real authentication, per-action authorisation, registered device keys, signed events, and optional encrypted recovery dumps. If a user edited IndexedDB or changed a dump file, the modified event should be rejected unless it has a valid signature and passes server-side checks.
-
-## Known Limits
-
-- Demo authentication only.
-- SQLite is used for simplicity and local runnability.
-- Helper discovery is manual.
-- WebRTC requires peers to be signaled before the outage; the central/helper peer directory helps prepare those links while users are connected.
-- Manual QR/code signaling is future work.
-- Production security, signed device events, access control, and encryption would need more work.
-- REST sync and recovery import are demo-trusted replication paths.
-
-## Why This Matters
-
-Most chat demos assume the server is available. This project starts from a different assumption: people may still need to write messages while the central connection is unstable.
-
-The design assumes that connectivity can fail at several layers:
-
-```txt
-central server unreachable
-helper unavailable
-browser tab closed
-socket reconnects after events were created
-same event arrives more than once
-field laptop needs a manual recovery path
-```
-
-The project responds with layered resilience:
-
-```txt
-central persistence
-helper persistence
-browser IndexedDB
-idempotent event IDs
-service-worker notifications
-recovery dumps
-peer-assisted WebRTC replication
-```
+Recovery exports include a SHA-256 checksum calculated from the canonical events payload. Recovery import verifies this checksum before accepting or previewing events, so truncated or manually corrupted dumps are rejected instead of being applied silently.

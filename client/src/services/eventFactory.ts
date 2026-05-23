@@ -11,8 +11,6 @@ import type {
 import { clientConfig } from '../config/clientConfig'
 import { nowIso } from '../utils/dates'
 
-let logicalClock = Number(localStorage.getItem(clientConfig.storageKeys.logicalClock) ?? 0)
-
 export function createChatEvent<TPayload extends ChatEventPayload>(input: {
   nodeId: NodeId
   deviceId: DeviceId
@@ -22,8 +20,7 @@ export function createChatEvent<TPayload extends ChatEventPayload>(input: {
   payload: TPayload
   syncStatus?: EventSyncStatus
 }): ChatEvent<TPayload> {
-  logicalClock += 1
-  localStorage.setItem(clientConfig.storageKeys.logicalClock, String(logicalClock))
+  const logicalClock = nextLogicalClock()
 
   return {
     eventId: `${input.deviceId}:${crypto.randomUUID()}`,
@@ -37,4 +34,10 @@ export function createChatEvent<TPayload extends ChatEventPayload>(input: {
     logicalClock,
     syncStatus: input.syncStatus ?? 'local'
   }
+}
+
+function nextLogicalClock(): number {
+  const logicalClock = Number(sessionStorage.getItem(clientConfig.storageKeys.logicalClock) ?? 0) + 1
+  sessionStorage.setItem(clientConfig.storageKeys.logicalClock, String(logicalClock))
+  return logicalClock
 }

@@ -28,6 +28,7 @@ export function useDemoControls(app: DurableChatApp) {
   function openUserWindow(userId: UserId): void {
     const url = new URL(window.location.href)
     url.searchParams.set('user', userId)
+    url.searchParams.set(clientConfig.newDeviceQueryParam, '1')
     const activeChat = app.activeChat.value
     if (activeChat?.members.some((member) => member.userId === userId)) {
       url.searchParams.set('chat', activeChat.id)
@@ -41,8 +42,6 @@ export function useDemoControls(app: DurableChatApp) {
     if (!app.localTransportPaused.value) return undefined
 
     event.preventDefault()
-    // Browsers require returnValue to trigger the prompt, but most modern UAs
-    // show generic text instead of this app-specific warning.
     event.returnValue = LOCAL_ONLY_CLOSE_WARNING
     return LOCAL_ONLY_CLOSE_WARNING
   }

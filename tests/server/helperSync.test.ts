@@ -72,12 +72,13 @@ describe('helper sync', () => {
     const service = {
       getPendingCentralSync: vi.fn(() => [pendingEvent]),
       markCentralSynced: vi.fn(),
+      markCentralConflicted: vi.fn(),
       getSyncCursor: vi.fn(() => 7),
-      applyEvents: vi.fn(() => ({
-        accepted: [centralEvent.eventId],
+      applyEvents: vi.fn((events: ChatEvent[]) => ({
+        accepted: events.map((event) => event.eventId),
         duplicates: [],
         conflicts: [],
-        serverEvents: [centralEvent]
+        serverEvents: events
       })),
       setSyncCursor: vi.fn()
     }
@@ -105,17 +106,115 @@ describe('helper sync', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       'http://central.test/api/sync/events',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'X-DCR-Helper-Id': 'helper-test',
+          'X-DCR-Signature': expect.any(String),
+          'X-DCR-Timestamp': expect.any(String)
+        })
+      })
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://central.test/api/sync/events?since=7')
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `http://central.test/api/sync/events?since=7&limit=${serverConfig.helperSyncBatchSize}`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-DCR-Helper-Id': 'helper-test',
+          'X-DCR-Signature': expect.any(String),
+          'X-DCR-Timestamp': expect.any(String)
+        })
+      })
+    )
     expect(service.markCentralSynced).toHaveBeenCalledWith([pendingEvent.eventId])
+    expect(service.markCentralConflicted).toHaveBeenCalledWith([])
+    expect(service.applyEvents).toHaveBeenCalledWith([pendingEvent])
     expect(service.applyEvents).toHaveBeenCalledWith([centralEvent])
     expect(service.setSyncCursor).toHaveBeenCalledWith('central:http://central.test:sequence', 12)
     expect(emitAppliedEvent).toHaveBeenCalledWith(pendingEvent)
     expect(emitAppliedEvent).toHaveBeenCalledWith(centralEvent)
   })
 
-  it('backs off after a central sync failure before retrying', async () => {
+  it('marks central conflicts so rejected helper events are visible', async () => {
+    const pendingEvent = event({ eventId: 'helper:event-conflict' })
+    const service = {
+      getPendingCentralSync: vi.fn(() => [pendingEvent]),
+      markCentralSynced: vi.fn(),
+      markCentralConflicted: vi.fn(),
+      getSyncCursor: vi.fn(() => 0),
+      applyEvents: vi.fn(),
+      setSyncCursor: vi.fn()
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        accepted: [],
+        duplicates: [],
+        conflicts: [{
+          eventId: pendingEvent.eventId,
+          code: 'USER_NOT_FOUND',
+          message: 'Unknown user: u-denis'
+        }],
+        serverEvents: [],
+        nodeRole: 'central',
+        nodeId: 'central-demo'
+      } satisfies SyncResponse))
+      .mockResolvedValueOnce(jsonResponse({
+        nodeRole: 'central',
+        nodeId: 'central-demo',
+        latestSequence: 0,
+        events: []
+      } satisfies SyncPullResponse))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const stop = startHelperSync(serviceForHelperSync(service), vi.fn())
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    stop()
+
+    expect(service.markCentralSynced).toHaveBeenCalledWith([])
+    expect(service.markCentralConflicted).toHaveBeenCalledWith([pendingEvent.eventId])
+  })
+
+  it('keeps retryable central conflicts pending for a later sync pass', async () => {
+    const pendingEvent = event({ eventId: 'helper:event-retryable-conflict' })
+    const service = {
+      getPendingCentralSync: vi.fn(() => [pendingEvent]),
+      markCentralSynced: vi.fn(),
+      markCentralConflicted: vi.fn(),
+      getSyncCursor: vi.fn(() => 0),
+      applyEvents: vi.fn(),
+      setSyncCursor: vi.fn()
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        accepted: [],
+        duplicates: [],
+        conflicts: [{
+          eventId: pendingEvent.eventId,
+          code: 'CAUSAL_DEPENDENCY_MISSING',
+          message: 'Event depends on a chat that has not been accepted by central yet.',
+          retryable: true
+        }],
+        serverEvents: [],
+        nodeRole: 'central',
+        nodeId: 'central-demo'
+      } satisfies SyncResponse))
+      .mockResolvedValueOnce(jsonResponse({
+        nodeRole: 'central',
+        nodeId: 'central-demo',
+        latestSequence: 0,
+        events: []
+      } satisfies SyncPullResponse))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const stop = startHelperSync(serviceForHelperSync(service), vi.fn())
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    stop()
+
+    expect(service.markCentralSynced).toHaveBeenCalledWith([])
+    expect(service.markCentralConflicted).toHaveBeenCalledWith([])
+  })
+
+  it('probes quickly after a central sync failure so Laravel startup is detected promptly', async () => {
     vi.useFakeTimers()
     const service = {
       getPendingCentralSync: vi.fn(() => []),
@@ -136,7 +235,7 @@ describe('helper sync', () => {
     await Promise.resolve()
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    await vi.advanceTimersByTimeAsync(1999)
+    await vi.advanceTimersByTimeAsync(serverConfig.helperSyncMinIntervalMs - 1)
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1)

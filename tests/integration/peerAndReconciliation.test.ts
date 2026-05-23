@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPeerMesh } from '../../client/src/services/realtime/peerMesh'
-import { reconcileDirectChatConfirmation } from '../../client/src/chat/events/directChatReconciliation'
+import { reconcileDirectChatConfirmation, reconcileDirectChatFromCentralEvent } from '../../client/src/chat/events/directChatReconciliation'
 import { useChatState } from '../../client/src/chat/composables/useChatState'
 import { localDb, saveLocalEvent } from '../../client/src/storage/localDb'
 import type { UserId } from '../../shared/types'
@@ -13,7 +13,7 @@ import {
 import {
   chatCreated,
   messageCreated
-} from './helpers'
+} from '../helpers/integration'
 
 describe('peer routing and direct-chat reconciliation integration', () => {
   beforeEach(async () => {
@@ -109,4 +109,62 @@ describe('peer routing and direct-chat reconciliation integration', () => {
       'chat-central-accepted'
     ])
   })
+
+  it('remaps a local duplicate direct chat when an authoritative central event arrives later', async () => {
+    globalThis.localStorage = {
+      getItem: vi.fn(() => 'u-denis'),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      key: vi.fn(),
+      length: 0
+    } as Storage
+    const state = useChatState()
+    const localChat = chatCreated({
+      eventId: 'local:duplicate-direct-background',
+      chatId: 'chat-local-background',
+      payload: {
+        chatId: 'chat-local-background',
+        clientChatId: 'chat-local-background',
+        type: 'direct',
+        memberIds: ['u-denis', 'u-anna']
+      }
+    })
+    const centralChat = chatCreated({
+      eventId: 'central:accepted-direct-background',
+      originNodeId: 'laravel-central',
+      chatId: 'chat-central-background',
+      syncStatus: 'central-synced',
+      payload: {
+        chatId: 'chat-central-background',
+        clientChatId: 'chat-central-background',
+        type: 'direct',
+        memberIds: ['u-anna', 'u-denis']
+      }
+    })
+    const pendingMessage = messageCreated('chat-local-background')
+
+    state.applyEvent(localChat)
+    state.activeChatId.value = 'chat-local-background'
+    await saveLocalEvent(localChat)
+    await saveLocalEvent(pendingMessage)
+
+    const result = await reconcileDirectChatFromCentralEvent(state, centralChat)
+    state.applyEvent(centralChat)
+    const savedEvents = await localDb.events.orderBy('eventId').toArray()
+
+    expect(result).toEqual({
+      remappedChat: {
+        fromChatId: 'chat-local-background',
+        toChatId: 'chat-central-background'
+      }
+    })
+    expect(state.activeChatId.value).toBe('chat-central-background')
+    expect(state.chats.value.map((chat) => chat.id)).toContain('chat-central-background')
+    expect(savedEvents.map((event) => event.chatId)).toEqual([
+      'chat-central-background',
+      'chat-central-background'
+    ])
+  })
+
 })

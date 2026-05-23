@@ -8,7 +8,7 @@ import type {
 } from '../../../../shared/types'
 
 export interface PeerMeshInput {
-  deviceId: string
+  deviceId: DeviceId
   currentUserId: () => UserId
   sendSignal: (toUserId: UserId, signal: PeerSignalPayload) => void
   getEventsForPeer: (peerUserId: UserId) => Promise<ChatEvent[]>

@@ -1,8 +1,8 @@
-import type { ChatEvent } from '../../../../shared/types'
+import type { ChatEvent, UserId } from '../../../../shared/types'
 import { clientConfig } from '../../config/clientConfig'
 
 interface LocalEventBusMessage {
-  userId: string
+  userId: UserId
   event: ChatEvent
 }
 
@@ -12,7 +12,7 @@ export interface LocalEventBus {
 }
 
 export function createLocalEventBus(input: {
-  getUserId: () => string
+  getUserId: () => UserId
   onEvent: (event: ChatEvent) => void
 }): LocalEventBus {
   if (typeof BroadcastChannel === 'undefined') {

@@ -1,51 +1,22 @@
-# App Flows
+# Flow Documents
 
-This folder describes the main runtime flows of Durable Chat Relay.
+These documents describe how the original Durable Chat Relay project behaves and how it integrates with the Laravel central server.
 
-Use these files when checking whether a user path is expected, already implemented, demo-only, or still a limitation.
-
-## Flow Files
-
-- [User Lifecycle](user-lifecycle.md): first open, user switching, refresh, close, reopen, server restart.
-- [Messaging And Sync](messaging-and-sync.md): chat creation, message send, read receipts, pending outbox, automatic retry.
-- [Resilience And Failure](resilience-and-failure.md): local-only mode, helper node, WebRTC peer fallback, duplicate direct chats, unavailable users.
-- [Notifications And Recovery](notifications-and-recovery.md): permission, foreground notifications, service-worker click flow, recovery dump import/export.
-
-## Short Truth Table
-
-| Question | Answer |
-|---|---|
-| Does the app sync browser-saved data after reopen? | Yes, from the same browser profile, when the app reconnects. |
-| Can another user's browser sync my unsent local data? | No. Local IndexedDB data belongs to the browser that created it. |
-| Does WebRTC deliver to users who were never online? | No. It only helps already-signaled open peers. |
-| Does server restart delete chats? | No, if the SQLite database file is preserved. |
-| Is this secure production auth? | No. This is demo auth with demo user switching and demo headers. |
-
-## Main Data Stores
+Runtime routing:
 
 ```txt
-Central SQLite
-  official event log and projected chat state
+Original direct mode:
+Vue client -> original Node central Socket.IO/API -> SQLite
 
-Helper SQLite
-  temporary helper event log, later synced to central
-
-Browser IndexedDB
-  local outbox, cached users/chats/messages, peer-replicated events
-
-Service worker
-  notification display and notification-click routing
+Laravel integration mode:
+Vue client -> Node helper Socket.IO/API -> Laravel central HTTP sync API -> PostgreSQL
 ```
 
-## Main Transports
+Laravel does not provide the browser Socket.IO transport. In the Laravel path, the Vue client must point at the Node helper, and only the helper sends signed HTTP sync requests to Laravel.
 
-```txt
-Socket.IO
-  normal realtime delivery and WebRTC signaling
+- `messaging-and-sync.md` covers chat creation, message delivery, helper sync and cursor pull.
+- `resilience-and-failure.md` covers local only mode, helper outage, central outage, direct chat reconciliation and WebRTC fallback.
+- `notifications-and-recovery.md` covers notification behaviour and recovery export/import.
+- `user-lifecycle.md` covers demo user switching and peer/session cleanup.
 
-REST sync
-  helper-to-central push/pull and recovery import/export
-
-WebRTC data channels
-  peer event replication between already-signaled open browsers
-```
+For the cross project contract, see `../shared-integration-contract.md`.

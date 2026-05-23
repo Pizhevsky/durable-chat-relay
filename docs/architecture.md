@@ -1,102 +1,166 @@
-# Architecture Notes
+# Architecture
 
 ## Summary
 
-Durable Chat Relay is a central-first chat system with optional helper nodes and browser-side durability.
+Durable Chat Relay is a central first chat system with optional helper nodes and browser side durability.
 
-The architecture was shaped by a real field-office constraint: offices may appear and disappear frequently, so permanent local servers are not always practical. At the same time, relying only on a central server is risky when field connectivity is unstable.
+The original project provides the browser, helper and original Node central implementation. The Laravel central server is a separate project that can replace the original Node central in the helper sync path.
 
-This is resilience architecture, not secure enterprise messaging. The architecture can be connected to real authentication and authorisation, but this implementation uses demo user switching and demo-auth headers.
+## Two supported central paths
 
-## Modes
+### Original Node central path
+
+```txt
+Vue client :1234
+   |
+   | Socket.IO
+   v
+Node central :3000
+   |
+   v
+SQLite central event store
+```
+
+Use:
+
+```bash
+npm run dev
+```
+
+### Laravel central integration path
+
+```txt
+Vue client :1234
+   |
+   | Socket.IO and helper API
+   v
+Node helper :3001
+   |
+   | signed HTTP sync
+   v
+Laravel central :8000
+   |
+   v
+PostgreSQL
+```
+
+Use:
+
+```bash
+npm run dev:laravel
+```
+
+## Runtime modes
 
 ### Central mode
 
-Users connect directly to the central Express/Socket.IO server.
+The Node process runs as the original central server.
 
 ```txt
-Browser -> central server -> central SQLite database
+NODE_ROLE=central
 ```
+
+It accepts browser Socket.IO events and signed helper sync events.
 
 ### Helper mode
 
-A responsible area user can run a lightweight helper process on a laptop.
+The Node process runs as the local helper.
 
 ```txt
-Browser -> helper node -> helper SQLite database
-Helper node -> central server when available
+NODE_ROLE=helper
 ```
 
-### Browser-only mode
+The helper accepts browser Socket.IO connections, stores events in helper SQLite, pushes pending events to central, and pulls missed central events by cursor.
 
-The browser stores user actions in IndexedDB until a transport becomes available.
+### Browser local mode
+
+The browser stores user actions in IndexedDB when no transport path is available.
 
 ```txt
 Browser -> IndexedDB outbox + cached users/chats/messages
 ```
 
-### Peer-assisted mode
+### Peer assisted mode
 
-Known browsers replicate events over WebRTC data channels after central/helper signaling has established the peer link.
+Known browsers can replicate events over WebRTC data channels after Socket.IO signalling has established the peer link.
 
 ```txt
-Browser <-> Browser <-> Browser
+Browser <-> Browser
 Each browser stores event log in IndexedDB
 ```
 
-Socket.IO carries WebRTC offers, answers and ICE candidates. The server derives `fromUserId` and `fromDeviceId` from the authenticated socket session, sends each browser a peer directory of online/local-only users who share active chats, and only relays `peer:signal` to those shared-chat peers.
+WebRTC does not replace the central server. It only helps active known peers exchange events during temporary connectivity gaps.
 
+## Helper to central sync
 
-## Peer directory preparation
-
-A WebRTC fallback only helps if peers know about each other before the central path becomes unstable. When a browser connects, changes user, creates a chat, changes membership, or switches into local-only mode, the server recalculates a peer directory for each connected user.
-
-The directory includes online or local-only users who share an active chat with the current user. The client uses that directory to prepare peer connections even if the user is not currently looking at that chat. This avoids a failure mode where Denis had a peer link to Anna, Anna later prepared a link to Kate, but Kate could not reach Denis for a group message because Kate never learned Denis was an available shared-chat peer.
-
-The directory is still scoped by chat membership. It is not a global list of every online user, and it does not allow signaling to unrelated users.
-
-When a demo window changes selected user, the browser clears stale peer connections and the server removes the socket from the old user's chat rooms before joining the new user's rooms. This prevents a Kate peer graph from being reused after the same window becomes Ivan, which is important for group fallback scenarios where Anna needs to reach both Denis and Ivan while local-only.
-
-## Why event log
-
-Rows alone are not enough for durable retry. The same message can arrive via the original browser, helper sync, peer replication or recovery dump.
-
-An event log gives one stable identity per action:
+The helper sync loop has two parts:
 
 ```txt
-eventId = originDeviceId + ':' + uuid
+push pending local/helper events to central
+pull missed central events since stored sequence cursor
 ```
 
-The central server can accept the first copy and ignore duplicates.
-
-## Helper node philosophy
-
-The helper is intentionally small.
-
-It is not a full branch server. It is a temporary cache, relay and sync queue that can be started where it helps and ignored where it is not available. It pushes local events to central, pulls missed central events with a stored sequence cursor, and backs off while the central server is unavailable.
-
-
-## Demo visibility
-
-For portfolio and interview demos, the app includes a local-only simulation mode. It pauses central/helper chat delivery for the current browser tab while keeping the socket available for peer directory updates and WebRTC signaling. This makes it easy to show the recovery path on one computer:
+Both push and pull requests are HMAC signed.
 
 ```txt
-connected -> local-only tab -> IndexedDB outbox -> reconnect -> automatic retry -> central-synced
+X-DCR-Helper-Id
+X-DCR-Timestamp
+X-DCR-Signature
 ```
 
-The UI also shows recent events, pending counts, notification permission state and message sync status so the underlying process is visible rather than hidden behind the chat interface.
+The original Node central and Laravel central verify the same signature contract.
 
-## Duplicate direct-chat protection
+## Cursor rule
 
-Direct chats use a canonical pair key based on sorted participant IDs. This prevents accidental duplicate direct chats when events are retried, imported from a recovery dump, or later arrive from a helper node.
+The helper stores the `latestSequence` returned by central.
 
-## Trust boundaries
+Central must return:
 
-This is a demo app, not production authentication. Socket sessions trust the demo `client:hello` user selection, and REST event publishing still uses a demo user header.
+```txt
+latestSequence = sequence of the last event included in this response
+currentSequence = current central maximum sequence
+hasMore = latestSequence < currentSequence
+```
 
-The REST sync and recovery endpoints are also intentionally demo-trusted:
+This prevents a helper from skipping events when there are more central events than one response limit.
 
-- `POST /api/sync/events` accepts replicated events and preserves their original `actorUserId`.
-- `POST /api/recovery/import` imports event dumps and also preserves original authorship.
+## Direct chat reconciliation
 
-That matches the helper/browser recovery story, but it is not a production trust model. Peer signaling is constrained to active shared-chat members, but production deployments would still need real authentication, per-action authorisation checks, signed events, and stronger verification of REST sync, recovery import, and WebRTC signalling payloads. The current prototype validates event shape before projection, including event ID format and ISO timestamp format, but it does not yet prove that a browser-created event was signed by a registered device.
+Direct chats use a canonical pair key based on sorted participant ids.
+
+```txt
+u-anna:u-denis
+```
+
+If several helpers create the same direct chat while offline, the central server is authoritative. The later helper receives the canonical central `chat.created` event and remaps its local duplicate chat id to the central one.
+
+Expected result:
+
+```txt
+one central direct chat
+helper SQLite remapped to central chat id
+pending helper messages rewritten to central chat id
+browser IndexedDB and UI reconciled to central chat id
+```
+
+This behaviour is expected with both central implementations.
+
+## Responsibility split
+
+| Concern | Original project | Laravel central project |
+|---|---|---|
+| Vue UI | yes | no |
+| Socket.IO client transport | yes | no |
+| Node helper mode | yes | no |
+| Browser IndexedDB recovery | yes | no |
+| WebRTC peer fallback | yes | no |
+| Original Node central | yes | no |
+| Laravel central HTTP API | no | yes |
+| PostgreSQL central event store | no | yes |
+| PHP 8.x OOP domain layer | no | yes |
+
+## Security boundary
+
+The project now signs helper sync requests to central. That protects helper to central sync traffic in the demo integration.
+
+The project still uses demo user switching for browser sessions. A production system would need real authentication, per action authorization, signed device events, message encryption, key rotation, rate limiting and observability.

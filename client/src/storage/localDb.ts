@@ -1,12 +1,10 @@
 import {
-  RECOVERY_DUMP_FORMAT,
   type ChatEvent,
   type ChatId,
   type ChatSummary,
   type DeviceId,
   type EventId,
   type Message,
-  type RecoveryDump,
   type User,
   type UserId
 } from '../../../shared/types'
@@ -15,12 +13,10 @@ import { plainRecord } from '../utils/records'
 import {
   localDb,
   MAX_EVENT_RETRY_COUNT,
-  SYNCED_EVENT_MIN_KEEP,
-  SYNCED_EVENT_RETENTION_MS,
-  type LocalEventRecord,
-  type SyncCleanupOptions,
-  type SyncCleanupResult
+  type LocalEventRecord
 } from './localDbSchema'
+export { cleanupSyncedEvents } from './localDbCleanup'
+export { exportRecoveryDump, importRecoveryDump } from './localRecovery'
 
 export {
   localDb,
@@ -82,47 +78,6 @@ export async function peerSyncEventsById(eventIds: EventId[]): Promise<LocalEven
   return events
     .filter((event): event is LocalEventRecord => Boolean(event))
     .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
-}
-
-export async function cleanupSyncedEvents(options: SyncCleanupOptions = {}): Promise<SyncCleanupResult> {
-  const retentionMs = options.retentionMs ?? SYNCED_EVENT_RETENTION_MS
-  const keepMostRecent = options.keepMostRecent ?? SYNCED_EVENT_MIN_KEEP
-  const cutoffTime = options.nowMs ?? Date.now()
-  const cutoffIso = new Date(cutoffTime - retentionMs).toISOString()
-
-  let deletedEvents = 0
-  let deletedPeerAcks = 0
-
-  await localDb.transaction('rw', localDb.events, localDb.peerAcks, async () => {
-    const syncedEvents = await localDb.events
-      .where('localStatus')
-      .equals('sent-to-central')
-      .toArray()
-    const retainedEventIds = new Set(
-      syncedEvents
-        .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))
-        .slice(0, Math.max(0, keepMostRecent))
-        .map((event) => event.eventId)
-    )
-    const staleEventIds = syncedEvents
-      .filter((event) => !retainedEventIds.has(event.eventId) && event.updatedAt < cutoffIso)
-      .map((event) => event.eventId)
-
-    if (staleEventIds.length > 0) {
-      await localDb.events.bulkDelete(staleEventIds)
-      deletedEvents = staleEventIds.length
-    }
-
-    const remainingEventIds = new Set((await localDb.events.toArray()).map((event) => event.eventId))
-    const peerAcks = await localDb.peerAcks.toArray()
-    const orphanAcks = peerAcks.filter((ack) => !remainingEventIds.has(ack.eventId))
-    if (orphanAcks.length > 0) {
-      await localDb.peerAcks.bulkDelete(orphanAcks.map((ack) => [ack.eventId, ack.peerDeviceId]))
-      deletedPeerAcks = orphanAcks.length
-    }
-  })
-
-  return { deletedEvents, deletedPeerAcks }
 }
 
 export async function markEventsSent(eventIds: EventId[], localStatus: LocalEventRecord['localStatus']): Promise<void> {
@@ -205,31 +160,6 @@ export async function cacheMessages(chatId: string, messages: Message[]): Promis
 export async function cachedMessages(chatId: string): Promise<Message[]> {
   const rows = await localDb.messages.where('chatId').equals(chatId).sortBy('createdAt')
   return rows.map(({ cachedAt: _cachedAt, ...message }) => message)
-}
-
-export async function exportRecoveryDump(userId: UserId, deviceId: string): Promise<RecoveryDump> {
-  const events = await localDb.events.orderBy('createdAt').toArray()
-  return {
-    format: RECOVERY_DUMP_FORMAT,
-    exportedAt: nowIso(),
-    exportedBy: userId,
-    deviceId,
-    events,
-    note: 'Browser IndexedDB recovery dump. Import it into a helper or central node if automatic sync is not possible.'
-  }
-}
-
-export async function importRecoveryDump(dump: RecoveryDump): Promise<void> {
-  if (dump.format !== RECOVERY_DUMP_FORMAT) {
-    throw new Error('Unsupported recovery dump format')
-  }
-
-  await localDb.events.bulkPut(dump.events.map((event) => ({
-    ...plainRecord(event),
-    localStatus: event.syncStatus === 'central-synced' ? 'sent-to-central' : 'pending',
-    retryCount: 0,
-    updatedAt: nowIso()
-  })))
 }
 
 function payloadWithChatId<TPayload>(payload: TPayload, chatId: ChatId): TPayload {

@@ -3,8 +3,10 @@ export const clientConfig = {
   devClientPort: '1234',
   devApiPort: '3000',
   devHelperApiPort: '3001',
+  newDeviceQueryParam: 'newDevice',
   storageKeys: {
     apiOverride: 'durable-chat-api',
+    apiOverrideSource: 'durable-chat-api-source',
     deviceId: 'durable-chat-device-id',
     selectedUserId: 'durable-chat-user',
     logicalClock: 'durable-chat-clock',
@@ -28,6 +30,7 @@ export const clientConfig = {
   syncedEventRetentionMs: 24 * 60 * 60 * 1000,
   syncedEventMinKeep: 200,
   maxEventRetryCount: 5,
+  devCentralReconnectProbeMs: 5000,
   demo: {
     maxAlternateUserButtons: 3,
     userWindowFeatures: 'width=1100,height=850'

@@ -1,21 +1,21 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AppConfig } from '../../../../shared/types'
 import { clientConfig } from '../../config/clientConfig'
-import { api } from '../../services/api'
 import { getDeviceId } from '../../services/device'
 import { createLocalEventBus } from '../../services/realtime/localEventBus'
-import { downloadRecoveryDump, readRecoveryDump } from '../../services/recoveryFiles'
-import { exportRecoveryDump, importRecoveryDump } from '../../storage/localDb'
+import type { ChatActions } from '../actions/chatActions'
 import { createChatActions } from '../actions/chatActions'
 import { createChatBrowserActions } from '../actions/chatBrowser'
 import { errorMessage } from '../errorMessage'
-import { reconcileDirectChatConfirmation } from '../events/directChatReconciliation'
 import { createChatPersistence } from '../persistence/chatPersistence'
+import { useAppInitialisation } from './useAppInitialisation'
+import { useAppliedEventPipeline } from './useAppliedEventPipeline'
 import { useChatState } from './useChatState'
-import { useOutboxSync } from './useOutboxSync'
-import { usePeerReplication } from './usePeerReplication'
+import { useDocumentTitle } from './useDocumentTitle'
 import { usePushNotifications } from './usePushNotifications'
-import { useSocketConnection } from './useSocketConnection'
+import { useRecoveryActions } from './useRecoveryActions'
+import { useTransportCoordinator } from './useTransportCoordinator'
+import { useUserSession } from './useUserSession'
 
 type AppliedChatEvent = Parameters<ReturnType<typeof useChatState>['applyEvent']>[0]
 
@@ -26,8 +26,9 @@ export function useDurableChatApp() {
   const localTransportPaused = ref(false)
   let nodeId = `browser-${deviceId.slice(0, clientConfig.browserNodeIdPrefixLength)}`
   let appConfig: AppConfig | null = null
-  let retryPendingAfterConnect: (() => Promise<void>) | null = null
-  let peerReplication: ReturnType<typeof usePeerReplication> | null = null
+  let actions: ChatActions
+  let userSession: ReturnType<typeof useUserSession>
+  let eventPipeline: ReturnType<typeof useAppliedEventPipeline>
 
   const persistence = createChatPersistence({
     state,
@@ -49,183 +50,105 @@ export function useDurableChatApp() {
     ensureUser: changeUser
   })
 
-  const socket = useSocketConnection({
-    deviceId,
-    getUserId: () => state.currentUserId.value,
-    onConnectionLabel: (label) => {
-      state.connectionLabel.value = label
-    },
-    onConnected: () => {
-      if (localTransportPaused.value) return
-      retryPendingAfterConnect?.().catch((error: unknown) => {
-        state.lastError.value = errorMessage(error, 'Failed to retry pending events')
-      })
-    },
-    onChats: (chats) => {
-      state.setChats(chats)
-      syncPeerTargets()
-      persistence.persistVisibleState().catch(() => undefined)
-      browserActions.openChatFromUrlIfPossible()
-      persistence.loadActiveMessages().catch((error: unknown) => {
-        state.lastError.value = errorMessage(error, 'Failed to load messages')
-      })
-    },
-    onEvent: async (event) => {
-      await handleAppliedEvent(event, { rebroadcast: true })
-    },
-    onPeerSignal: (message) => {
-      peerReplication?.handleSignal(message).catch((error: unknown) => {
-        state.lastError.value = errorMessage(error, 'Failed to handle WebRTC signal')
-      })
-    },
-    onPeerDirectory: (directory) => {
-      state.setPeerDirectory(directory.peers)
-      syncPeerTargets()
-    },
-    onPresence: (presence) => {
-      state.setPresence(presence)
-      syncPeerTargets()
-    }
-  })
-
-  peerReplication = usePeerReplication({
+  const transport = useTransportCoordinator({
     state,
     deviceId,
     localTransportPaused,
-    sendSignal: socket.sendPeerSignal,
-    onEventAccepted: async (event) => {
-      await handleAppliedEvent(event, { rebroadcast: true })
-      if (socket.isConnected()) {
-        outbox.retryPending().catch((error: unknown) => {
-          state.lastError.value = errorMessage(error, 'Failed to sync peer event to central')
-        })
-      }
-    }
+    browserActions,
+    applyConfig,
+    loadConfig: persistence.loadConfig,
+    loadUsers: persistence.loadUsers,
+    refreshChats: persistence.refreshChats,
+    loadActiveMessages: persistence.loadActiveMessages,
+    persistVisibleState: persistence.persistVisibleState,
+    publishLocalEvent: localEventBus.publish,
+    handleAppliedEvent
   })
 
-  const outbox = useOutboxSync({
-    getUserId: () => state.currentUserId.value,
-    publishOnline: socket.publishEvent,
-    syncReplicated: socket.syncEvents,
-    onEventConfirmed: async (confirmed, original) => {
-      const result = await reconcileDirectChatConfirmation(state, confirmed, original)
-      state.applyEvent(confirmed)
-      persistence.persistVisibleState(confirmed.chatId).catch(() => undefined)
-      localEventBus.publish(confirmed)
-      publishPeerEvent(confirmed)
-      return result
-    },
-    onPendingCount: (count) => {
-      state.pendingCount.value = count
-    },
-    onEventSaved: async (event) => {
-      if (!socket.isConnected()) publishPeerEvent(event)
-    }
-  })
-  retryPendingAfterConnect = outbox.retryPending
-
-  const actions = createChatActions({
+  actions = createChatActions({
     state,
     deviceId,
     nodeId: () => nodeId,
     openChat,
     refreshChats: persistence.refreshChats,
     persistVisibleState: persistence.persistVisibleState,
-    saveAndSend: async (event) => {
-      await outbox.saveAndSend(event)
-    }
+    saveAndSend: transport.outbox.saveAndSend
   })
 
-  async function initialise(): Promise<void> {
-    const config = await persistence.loadConfig()
+  userSession = useUserSession({
+    state,
+    browserActions,
+    peerReplication: () => transport.peerReplication,
+    reconnectUser: transport.socket.reconnectUser,
+    refreshChats: persistence.refreshChats,
+    loadActiveMessages: persistence.loadActiveMessages,
+    syncPeerTargets: transport.syncPeerTargets,
+    actions: () => actions
+  })
+
+  eventPipeline = useAppliedEventPipeline({
+    state,
+    publishLocalEvent: localEventBus.publish,
+    publishPeerEvent: transport.publishPeerEvent,
+    notifyFromForeground: push.notifyFromForeground,
+    persistVisibleState: persistence.persistVisibleState,
+    refreshChats: persistence.refreshChats,
+    markActiveMessagesRead: () => actions.markActiveMessagesRead(),
+    syncPeerTargets: transport.syncPeerTargets
+  })
+
+  const initialisation = useAppInitialisation({
+    state,
+    loadConfig: persistence.loadConfig,
+    applyConfig,
+    loadUsers: persistence.loadUsers,
+    connect: transport.socket.connect,
+    refreshChats: persistence.refreshChats,
+    syncPeerTargets: transport.syncPeerTargets,
+    initialisePush: push.initialise,
+    browserActions,
+    refreshPendingCount: transport.outbox.refreshPendingCount,
+    startCentralReconnect: transport.centralReconnect.start
+  })
+
+  const recoveryActions = useRecoveryActions({
+    state,
+    deviceId,
+    refreshChats: persistence.refreshChats,
+    retryPending: transport.outbox.retryPending
+  })
+
+  useDocumentTitle(state)
+
+  function applyConfig(config: AppConfig): void {
     appConfig = config
     nodeId = config.nodeId
-
-    await persistence.loadUsers()
-    socket.connect(config)
-    await persistence.refreshChats()
-    syncPeerTargets()
-    await push.initialise()
-    browserActions.bindServiceWorkerMessages()
-    browserActions.syncUserIdentity(state.currentUserId.value)
-    browserActions.openChatFromUrlIfPossible()
-    await outbox.refreshPendingCount()
   }
 
   async function openChat(chatId: string): Promise<void> {
-    state.activeChatId.value = chatId
-    browserActions.updateChatQueryParam(chatId)
-    await persistence.loadActiveMessages()
-    await actions.markActiveMessagesRead()
+    await userSession.openChat(chatId)
   }
 
   async function handleAppliedEvent(
     event: AppliedChatEvent,
     options: { rebroadcast: boolean }
   ): Promise<void> {
-    const result = state.applyEvent(event)
-    if (event.type === 'chat.created' || event.type === 'member.added' || event.type === 'member.removed') {
-      syncPeerTargets()
-    }
-    if (options.rebroadcast) {
-      localEventBus.publish(event)
-      publishPeerEvent(event)
-    }
-    if (result.message && event.actorUserId !== state.currentUserId.value) {
-      push.notifyFromForeground(result.message, state.currentUserId.value)
-    }
-    await persistence.persistVisibleState(event.chatId)
-    if (result.needsRefresh) await persistence.refreshChats()
-    if (event.chatId === state.activeChatId.value) {
-      actions.markActiveMessagesRead().catch((error: unknown) => {
-        state.lastError.value = errorMessage(error, 'Failed to mark messages as read')
-      })
-    }
+    await eventPipeline.handleAppliedEvent(event, options)
   }
 
   async function changeUser(userId: string): Promise<void> {
-    if (state.currentUserId.value === userId) return
-
-    peerReplication?.resetForUserChange()
-    state.setCurrentUser(userId)
-    browserActions.syncUserIdentity(userId)
-    socket.reconnectUser()
-    await persistence.refreshChats()
-    syncPeerTargets()
-    await persistence.loadActiveMessages()
-    await actions.markActiveMessagesRead()
-  }
-
-  function syncPeerTargets(): void {
-    peerReplication?.syncTargets()
-  }
-
-  function publishPeerEvent(event: AppliedChatEvent): void {
-    peerReplication?.publishEvent(event)
-  }
-
-  async function exportDump(): Promise<void> {
-    const dump = await exportRecoveryDump(state.currentUserId.value, deviceId)
-    downloadRecoveryDump(dump)
-  }
-
-  async function importDump(file: File): Promise<void> {
-    const dump = await readRecoveryDump(file)
-    await importRecoveryDump(dump)
-    await api.importRecovery(dump)
-    await outbox.retryPending()
-    await persistence.refreshChats()
+    await userSession.changeUser(userId)
   }
 
   async function pauseOnlineTransport(): Promise<void> {
     localTransportPaused.value = true
-    socket.setLocalTransportPaused(true)
-    await outbox.refreshPendingCount()
+    transport.socket.setLocalTransportPaused(true)
+    await transport.outbox.refreshPendingCount()
   }
 
   async function resumeOnlineTransport(): Promise<void> {
     localTransportPaused.value = false
-    socket.setLocalTransportPaused(false)
+    transport.socket.setLocalTransportPaused(false)
   }
 
   async function requestNotifications(): Promise<void> {
@@ -247,18 +170,17 @@ export function useDurableChatApp() {
   })
 
   onMounted(() => {
-    initialise().catch((error: unknown) => {
+    initialisation.initialise().catch((error: unknown) => {
       state.lastError.value = errorMessage(error, 'Failed to initialise chat')
       state.connectionLabel.value = 'Offline, saving locally'
     })
   })
 
   onBeforeUnmount(() => {
-    socket.close()
+    transport.close()
     browserActions.close()
     push.close()
     localEventBus.close()
-    peerReplication?.close()
   })
 
   return {
@@ -274,9 +196,9 @@ export function useDurableChatApp() {
     createDirectChat: actions.createDirectChat,
     createGroupChat: actions.createGroupChat,
     sendMessage: actions.sendMessage,
-    retryPending: outbox.retryPending,
-    exportDump,
-    importDump,
+    retryPending: transport.outbox.retryPending,
+    exportDump: recoveryActions.exportDump,
+    importDump: recoveryActions.importDump,
     pauseOnlineTransport,
     resumeOnlineTransport,
     requestNotifications,

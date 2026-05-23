@@ -19,13 +19,41 @@ export async function reconcileDirectChatConfirmation(
   if (confirmed.chatId === original.chatId) return undefined
   if (directPairKeyFromEvent(confirmed) !== directPairKeyFromEvent(original)) return undefined
 
-  state.remapChatId(original.chatId, confirmed.chatId)
-  await remapPendingChatEvents(original.chatId, confirmed.chatId)
+  return remapDirectChat(state, original.chatId, confirmed.chatId)
+}
+
+export async function reconcileDirectChatFromCentralEvent(
+  state: ChatState,
+  confirmed: ChatEvent
+): Promise<DirectChatReconciliationResult | undefined> {
+  if (!isDirectChatCreatedEvent(confirmed)) return undefined
+  if (confirmed.syncStatus !== 'central-synced') return undefined
+
+  const directPairKey = directPairKeyFromEvent(confirmed)
+  const existing = state.chats.value.find((chat) =>
+    chat.type === 'direct' &&
+    chat.directPairKey === directPairKey &&
+    chat.id !== confirmed.chatId
+  )
+  if (!existing) return undefined
+
+  return remapDirectChat(state, existing.id, confirmed.chatId)
+}
+
+async function remapDirectChat(
+  state: ChatState,
+  fromChatId: string,
+  toChatId: string
+): Promise<DirectChatReconciliationResult | undefined> {
+  if (fromChatId === toChatId) return undefined
+
+  state.remapChatId(fromChatId, toChatId)
+  await remapPendingChatEvents(fromChatId, toChatId)
 
   return {
     remappedChat: {
-      fromChatId: original.chatId,
-      toChatId: confirmed.chatId
+      fromChatId,
+      toChatId
     }
   }
 }

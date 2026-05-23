@@ -1,39 +1,27 @@
-# Peer Mesh Notes
+# Full Mesh Roadmap
 
-Peer mesh mode is the WebRTC peer-to-peer extension for already-known users.
+The current project supports peer assisted fallback for already signalled shared chat peers. It is not a full mesh offline network.
 
-## Purpose
-
-Allow already-known users to continue exchanging and recovering chat events when central and helper nodes are unavailable.
-
-## Implemented pieces
-
-1. WebRTC data channel setup
-2. Signaling through central/helper while online
-3. Target filtering by active chat members
-4. Event replication protocol
-5. Peer ACK storage
-6. Summary and missing-event exchange
-7. Batch backfill over the data channel
-8. Recovery sync to central after reconnect
-
-## Protocol
+## Current scope
 
 ```txt
-event:new
-event:ack
-event:summary
-event:request-missing
-event:batch
+central or helper signalling prepares peer links
+peer links are scoped to active shared chat members
+peer replicated events remain retryable until central confirmation
+central remains authoritative
 ```
 
-## Remaining roadmap
+## Future work
 
-- polished per-message peer replication UI
-- manual QR/code signaling fallback
-- richer group delivery status
-- conflict repair UI for rejected membership events
+A fuller mesh design would need:
 
-## Honest limitation
+- stronger peer identity
+- signed device events
+- peer trust and revocation
+- encrypted payloads
+- conflict repair tools
+- richer peer discovery
+- audit and observability
+- tests for larger peer graphs
 
-Browsers cannot reliably discover every peer on a LAN without some form of signaling. Full mesh mode should be described as peer-assisted fallback for known users, not a universal serverless replacement.
+This roadmap is separate from the Laravel central integration. Laravel provides the central authority, not peer discovery or browser mesh behaviour.

@@ -117,7 +117,9 @@ function validateMessageCreated(event: ChatEvent<MessageCreatedPayload>): void {
   validatePayloadChatId(event, payload.chatId)
   requireString(payload.messageId, 'messageId')
   requireString(payload.clientMessageId, 'clientMessageId')
-  requireString(payload.text, 'text')
+  if (typeof payload.text !== 'string') {
+    throw invalid('text must be a non-empty string')
+  }
 
   const text = payload.text.trim()
   if (!text) throw invalid('message text cannot be empty')

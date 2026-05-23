@@ -3,6 +3,7 @@ import type {
   AppConfig,
   ChatEvent,
   ChatSummary,
+  DeviceId,
   PeerDirectorySnapshot,
   PeerSignalMessage,
   PeerSignalPayload,
@@ -20,8 +21,8 @@ interface PendingPeerSignal {
 }
 
 export function useSocketConnection(input: {
-  deviceId: string
-  getUserId: () => string
+  deviceId: DeviceId
+  getUserId: () => UserId
   onEvent: (event: ChatEvent) => void
   onChats: (chats: ChatSummary[]) => void
   onConnectionLabel: (label: string) => void

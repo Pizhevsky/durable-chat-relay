@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3'
 import type {
-  ChatCreatedPayload,
   ChatEvent,
   ChatId,
   EventId,
@@ -8,26 +7,30 @@ import type {
   UserId
 } from '../../shared/types.js'
 import { AppError } from '../errors.js'
+import { DirectChatReconciler } from './DirectChatReconciler.js'
 import { ChatEventProjector } from './ChatEventProjector.js'
 import { ChatReadModel } from './ChatReadModel.js'
+import { ChatEventStore } from './ChatEventStore.js'
+import { SyncStateStore } from './SyncStateStore.js'
 import { validateChatEvent } from './ChatEventValidator.js'
-import {
-  canonicalDirectPairKey,
-  normaliseIncomingStatus,
-  toEvent
-} from './chatEventFormatters.js'
-import type { EventRow } from './chatEventRows.js'
+import { normaliseIncomingStatus } from './chatEventFormatters.js'
 
 export class ChatEventService {
+  private readonly directChatReconciler: DirectChatReconciler
+  private readonly eventStore: ChatEventStore
   private readonly projector: ChatEventProjector
   private readonly readModel: ChatReadModel
+  private readonly syncStateStore: SyncStateStore
 
   constructor(
     private readonly db: Database.Database,
     private readonly nodeRole: NodeRole
   ) {
+    this.eventStore = new ChatEventStore(db)
+    this.directChatReconciler = new DirectChatReconciler(db, nodeRole, (event) => this.eventStore.storeEvent(event))
     this.projector = new ChatEventProjector(db)
     this.readModel = new ChatReadModel(db)
+    this.syncStateStore = new SyncStateStore(db)
   }
 
   listUsers() {
@@ -39,7 +42,11 @@ export class ChatEventService {
   }
 
   listMessages(chatId: ChatId, userId: UserId) {
-    return this.readModel.listMessages(chatId, userId)
+    if (!this.getActiveMemberIds(chatId).includes(userId)) {
+      throw new AppError('User is not an active chat member', 403, 'NOT_CHAT_MEMBER')
+    }
+
+    return this.readModel.listMessages(chatId)
   }
 
   getActiveMemberIds(chatId: ChatId): UserId[] {
@@ -53,26 +60,32 @@ export class ChatEventService {
   applyEvent(event: ChatEvent): { event: ChatEvent; inserted: boolean } {
     validateChatEvent(event)
 
-    const existing = this.db.prepare('SELECT event_id FROM events WHERE event_id = ?').get(event.eventId)
-    if (existing) {
-      return { event: this.getEventById(event.eventId), inserted: false }
+    if (this.eventStore.hasEvent(event.eventId)) {
+      return { event: this.eventStore.getById(event.eventId), inserted: false }
     }
 
     const syncStatus = this.nodeRole === 'central'
       ? 'central-synced'
       : normaliseIncomingStatus(event.syncStatus, this.nodeRole)
     const eventToStore: ChatEvent = { ...event, syncStatus }
-    const existingDirectChatEvent = this.findExistingDirectChatCreatedEvent(eventToStore)
+    const existingDirectChatEvent = this.directChatReconciler.findDuplicateCreatedEvent(eventToStore)
     if (existingDirectChatEvent) {
+      if (this.directChatReconciler.shouldRemapToAuthoritative(eventToStore, existingDirectChatEvent)) {
+        this.directChatReconciler.remapLocalDirectChat(existingDirectChatEvent.chatId, eventToStore)
+
+        return { event: eventToStore, inserted: false }
+      }
+
       return { event: existingDirectChatEvent, inserted: false }
     }
 
     const transaction = this.db.transaction(() => {
-      this.storeEvent(eventToStore)
+      this.eventStore.storeEvent(eventToStore)
       this.projector.projectEvent(eventToStore)
     })
 
     transaction()
+
     return { event: eventToStore, inserted: true }
   }
 
@@ -86,13 +99,19 @@ export class ChatEventService {
     const duplicates: EventId[] = []
     const conflicts: EventId[] = []
     const serverEvents: ChatEvent[] = []
+    const chatIdAliases = new Map<ChatId, ChatId>()
 
-    for (const event of events) {
+    for (const originalEvent of events) {
+      const event = this.directChatReconciler.withChatIdAlias(originalEvent, chatIdAliases)
       try {
         const result = this.applyEvent(event)
         serverEvents.push(result.event)
         if (result.inserted) accepted.push(event.eventId)
         else duplicates.push(event.eventId)
+
+        if (this.directChatReconciler.isDirectChatCreated(event) && result.event.chatId !== event.chatId) {
+          chatIdAliases.set(event.chatId, result.event.chatId)
+        }
       } catch (_error) {
         conflicts.push(event.eventId)
       }
@@ -101,156 +120,40 @@ export class ChatEventService {
     return { accepted, duplicates, conflicts, serverEvents }
   }
 
-  getEventsSince(sequence: number): ChatEvent[] {
-    const rows = this.db.prepare(`
-      SELECT sequence, event_id, origin_node_id, origin_device_id, actor_user_id,
-             chat_id, type, payload_json, created_at, logical_clock, sync_status
-      FROM events
-      WHERE sequence > ?
-      ORDER BY sequence ASC
-    `).all(sequence) as EventRow[]
+  getEventsSince(sequence: number, limit = 1000): ChatEvent[] {
+    return this.eventStore.getSince(sequence, limit)
+  }
 
-    return rows.map((row) => toEvent(row))
+  getEventSequence(eventId: EventId): number {
+    return this.eventStore.getSequence(eventId)
   }
 
   getCurrentSequence(): number {
-    const row = this.db
-      .prepare('SELECT COALESCE(MAX(sequence), 0) AS sequence FROM events')
-      .get() as { sequence: number }
-    return row.sequence
+    return this.eventStore.getCurrentSequence()
   }
 
   getPendingCentralSync(limit = 100): ChatEvent[] {
-    const rows = this.db.prepare(`
-      SELECT sequence, event_id, origin_node_id, origin_device_id, actor_user_id,
-             chat_id, type, payload_json, created_at, logical_clock, sync_status
-      FROM events
-      WHERE sync_status != 'central-synced'
-      ORDER BY sequence ASC
-      LIMIT ?
-    `).all(limit) as EventRow[]
-
-    return rows.map((row) => toEvent(row))
+    return this.eventStore.getPendingCentralSync(limit)
   }
 
   markCentralSynced(eventIds: EventId[]): void {
-    if (eventIds.length === 0) return
+    this.eventStore.markCentralSynced(eventIds)
+  }
 
-    const updateEvent = this.db.prepare(`
-      UPDATE events
-      SET sync_status = 'central-synced'
-      WHERE event_id = ?
-    `)
-    const updateMessage = this.db.prepare(`
-      UPDATE messages
-      SET sync_status = 'central-synced'
-      WHERE id IN (
-        SELECT json_extract(payload_json, '$.messageId')
-        FROM events
-        WHERE event_id = ? AND type = 'message.created'
-      )
-    `)
-    const updateChat = this.db.prepare(`
-      UPDATE chats
-      SET sync_status = 'central-synced'
-      WHERE id IN (
-        SELECT json_extract(payload_json, '$.chatId')
-        FROM events
-        WHERE event_id = ? AND type = 'chat.created'
-      )
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const eventId of eventIds) {
-        updateEvent.run(eventId)
-        updateMessage.run(eventId)
-        updateChat.run(eventId)
-      }
-    })
-
-    transaction()
+  markCentralConflicted(eventIds: EventId[]): void {
+    this.eventStore.markCentralConflicted(eventIds)
   }
 
   getSyncCursor(key: string): number {
-    const row = this.db
-      .prepare('SELECT value FROM node_sync_state WHERE key = ?')
-      .get(key) as { value: string } | undefined
-    return row ? Number(row.value) : 0
+    return this.syncStateStore.getCursor(key)
   }
 
   setSyncCursor(key: string, value: number): void {
-    this.db.prepare(`
-      INSERT INTO node_sync_state (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `).run(key, String(value))
+    this.syncStateStore.setCursor(key, value)
   }
 
   exportEvents(): ChatEvent[] {
     return this.getEventsSince(0)
-  }
-
-  private storeEvent(event: ChatEvent): void {
-    this.db.prepare(`
-      INSERT INTO events (
-        event_id, origin_node_id, origin_device_id, actor_user_id, chat_id,
-        type, payload_json, created_at, logical_clock, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      event.eventId,
-      event.originNodeId,
-      event.originDeviceId,
-      event.actorUserId,
-      event.chatId,
-      event.type,
-      JSON.stringify(event.payload),
-      event.createdAt,
-      event.logicalClock,
-      event.syncStatus
-    )
-  }
-
-  private findExistingDirectChatCreatedEvent(event: ChatEvent): ChatEvent | null {
-    if (event.type !== 'chat.created') return null
-
-    const payload = event.payload as ChatCreatedPayload
-    if (payload.type !== 'direct') return null
-
-    const memberIds = Array.from(new Set([event.actorUserId, ...payload.memberIds]))
-    if (memberIds.length !== 2) return null
-
-    const directPairKey = canonicalDirectPairKey(memberIds)
-    const existing = this.db
-      .prepare('SELECT id FROM chats WHERE direct_pair_key = ?')
-      .get(directPairKey) as { id: string } | undefined
-    if (!existing) return null
-
-    return this.getChatCreatedEvent(existing.id)
-  }
-
-  private getEventById(eventId: EventId): ChatEvent {
-    const row = this.db.prepare(`
-      SELECT sequence, event_id, origin_node_id, origin_device_id, actor_user_id,
-             chat_id, type, payload_json, created_at, logical_clock, sync_status
-      FROM events WHERE event_id = ?
-    `).get(eventId) as EventRow | undefined
-
-    if (!row) throw new AppError('Event not found', 404, 'EVENT_NOT_FOUND')
-    return toEvent(row)
-  }
-
-  private getChatCreatedEvent(chatId: ChatId): ChatEvent {
-    const row = this.db.prepare(`
-      SELECT sequence, event_id, origin_node_id, origin_device_id, actor_user_id,
-             chat_id, type, payload_json, created_at, logical_clock, sync_status
-      FROM events
-      WHERE chat_id = ? AND type = 'chat.created'
-      ORDER BY sequence ASC
-      LIMIT 1
-    `).get(chatId) as EventRow | undefined
-
-    if (!row) throw new AppError('Chat creation event not found', 404, 'CHAT_CREATED_EVENT_NOT_FOUND')
-    return toEvent(row)
   }
 
 }

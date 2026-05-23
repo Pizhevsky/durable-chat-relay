@@ -14,7 +14,7 @@ import {
   publish,
   restoreConfig,
   waitForSocketEvent
-} from './helpers'
+} from '../helpers/integration'
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -26,6 +26,22 @@ async function expectNoSocketEvent(socket: ClientSocket, eventName: string): Pro
   await delay(60)
   socket.off(eventName, handler)
   expect(handler).not.toHaveBeenCalled()
+}
+
+function waitForSocketEventMatching<T>(
+  socket: ClientSocket,
+  eventName: string,
+  predicate: (payload: T) => boolean
+): Promise<T> {
+  return new Promise((resolveValue) => {
+    const handler = (payload: T) => {
+      if (!predicate(payload)) return
+      socket.off(eventName, handler)
+      resolveValue(payload)
+    }
+
+    socket.on(eventName, handler)
+  })
 }
 
 describe('Socket.IO realtime integration', () => {
@@ -59,14 +75,15 @@ describe('Socket.IO realtime integration', () => {
         waitForSocketEvent(mark, 'connect')
       ])
 
-      denis.emit('client:hello', { userId: 'u-denis', deviceId: 'device-denis' })
-      anna.emit('client:hello', { userId: 'u-anna', deviceId: 'device-anna' })
-      mark.emit('client:hello', { userId: 'u-mark', deviceId: 'device-mark' })
-      await Promise.all([
+      const initialChatLists = Promise.all([
         waitForSocketEvent(denis, 'chat:list'),
         waitForSocketEvent(anna, 'chat:list'),
         waitForSocketEvent(mark, 'chat:list')
       ])
+      denis.emit('client:hello', { userId: 'u-denis', deviceId: 'device-denis' })
+      anna.emit('client:hello', { userId: 'u-anna', deviceId: 'device-anna' })
+      mark.emit('client:hello', { userId: 'u-mark', deviceId: 'device-mark' })
+      await initialChatLists
 
       const annaApplied = waitForSocketEvent<ChatEvent>(anna, 'event:applied')
       const markUnexpected = vi.fn()
@@ -157,28 +174,39 @@ describe('Socket.IO realtime integration', () => {
         waitForSocketEvent(kateWindow, 'connect')
       ])
 
-      denis.emit('client:hello', { userId: 'u-denis', deviceId: 'device-denis' })
-      anna.emit('client:hello', { userId: 'u-anna', deviceId: 'device-anna' })
-      kateWindow.emit('client:hello', { userId: 'u-kate', deviceId: 'device-kate-window' })
-      await Promise.all([
+      const initialChatLists = Promise.all([
         waitForSocketEvent(denis, 'chat:list'),
         waitForSocketEvent(anna, 'chat:list'),
         waitForSocketEvent(kateWindow, 'chat:list')
       ])
+      denis.emit('client:hello', { userId: 'u-denis', deviceId: 'device-denis' })
+      anna.emit('client:hello', { userId: 'u-anna', deviceId: 'device-anna' })
+      kateWindow.emit('client:hello', { userId: 'u-kate', deviceId: 'device-kate-window' })
+      await initialChatLists
 
+      const annaDirectoryAfterLocalOnly = waitForSocketEventMatching<PeerDirectorySnapshot>(
+        anna,
+        'peer:directory',
+        (directory) => directory.peers.some((peer) => peer.userId === 'u-denis' && peer.isLocalOnly)
+      )
       denis.emit('client:mode', { localOnly: true })
       anna.emit('client:mode', { localOnly: true })
+      await annaDirectoryAfterLocalOnly
 
-      const annaDirectoryAfterIvan = waitForSocketEvent<PeerDirectorySnapshot>(anna, 'peer:directory')
+      const annaDirectoryAfterIvan = waitForSocketEventMatching<PeerDirectorySnapshot>(
+        anna,
+        'peer:directory',
+        (directory) =>
+          directory.peers.some((peer) => peer.userId === 'u-ivan') &&
+          !directory.peers.some((peer) => peer.userId === 'u-kate')
+      )
+      const ivanChatList = waitForSocketEvent<Array<{ id: string }>>(kateWindow, 'chat:list')
       kateWindow.emit('client:hello', { userId: 'u-ivan', deviceId: 'device-kate-window' })
-      const ivanChats = await waitForSocketEvent<Array<{ id: string }>>(kateWindow, 'chat:list')
+      const ivanChats = await ivanChatList
       expect(ivanChats.map((chat) => chat.id)).toContain('chat-field-team')
       expect(ivanChats.map((chat) => chat.id)).not.toContain('chat-anna-kate')
 
-      let directory = await annaDirectoryAfterIvan
-      if (!directory.peers.some((peer) => peer.userId === 'u-ivan')) {
-        directory = await waitForSocketEvent<PeerDirectorySnapshot>(anna, 'peer:directory')
-      }
+      const directory = await annaDirectoryAfterIvan
       expect(directory.peers).toContainEqual(expect.objectContaining({ userId: 'u-denis', isLocalOnly: true }))
       expect(directory.peers).toContainEqual(expect.objectContaining({ userId: 'u-ivan' }))
       expect(directory.peers.some((peer) => peer.userId === 'u-kate')).toBe(false)

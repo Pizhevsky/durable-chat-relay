@@ -8,7 +8,6 @@ import type {
   User,
   UserId
 } from '../../shared/types.js'
-import { AppError } from '../errors.js'
 import { directChatTitle } from './chatEventFormatters.js'
 import type { ChatRow, MemberRow, MessageRow } from './chatEventRows.js'
 
@@ -42,9 +41,7 @@ export class ChatReadModel {
     ))
   }
 
-  listMessages(chatId: ChatId, userId: UserId): Message[] {
-    this.assertActiveMember(chatId, userId)
-
+  listMessages(chatId: ChatId): Message[] {
     const rows = this.db.prepare(`
       SELECT m.id, m.client_message_id, m.chat_id, m.sender_id, u.name AS sender_name,
              m.text, m.created_at, m.sync_status
@@ -215,14 +212,5 @@ export class ChatReadModel {
     }
 
     return readBy
-  }
-
-  private assertActiveMember(chatId: ChatId, userId: UserId): void {
-    const member = this.db.prepare(`
-      SELECT user_id FROM chat_members
-      WHERE chat_id = ? AND user_id = ? AND left_at IS NULL
-    `).get(chatId, userId)
-
-    if (!member) throw new AppError('User is not an active chat member', 403, 'NOT_CHAT_MEMBER')
   }
 }

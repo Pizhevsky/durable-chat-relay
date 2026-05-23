@@ -1,74 +1,82 @@
 # Messaging And Sync Flows
 
-## Create Direct Chat Online
+## Create direct chat online
 
 1. User selects another user.
 2. Browser creates a `chat.created` event with a direct pair key.
 3. Event is saved locally first.
-4. Browser sends the event through Socket.IO.
-5. Server trusts the socket session actor, stores the event, and projects the chat.
-6. Server broadcasts the event to active chat members.
-7. Browser marks the local event as central-synced.
+4. Browser sends the event through Socket.IO to the current server path.
+5. In original direct mode, Node central stores the event and projects the chat.
+6. In Laravel integration mode, the Node helper stores and broadcasts locally, then syncs the event to Laravel over signed HTTP.
+7. The current server path returns or broadcasts the accepted event.
+8. Browser marks the local event as synced for the path it used.
 
 Duplicate protection:
 
-- direct chats use a canonical pair key like `u-anna:u-denis`
-- central returns the existing chat event instead of creating a second direct chat
+```txt
+direct chats use a canonical pair key like u-anna:u-denis
+central returns the existing chat event instead of creating a second direct chat
+```
 
-## Create Group Chat Online
+## Send message online
 
-1. User enters a group title and selects members.
-2. Browser creates a `chat.created` group event.
-3. Creator becomes owner.
-4. Server stores the chat and member rows.
-5. Server broadcasts to active members.
-6. Offline members see the group after reconnecting.
-
-Current rule:
-
-- membership changes are validated by server ownership checks
-
-## Send Message Online
-
-1. User writes message and presses send.
+1. User writes a message and presses send.
 2. Browser creates `message.created`.
 3. Browser saves the event in IndexedDB before network delivery.
-4. Socket.IO sends the event to server.
+4. Socket.IO sends the event to the current server path.
 5. Server confirms and broadcasts to active chat members.
-6. Sender marks event as central-synced.
+6. In helper mode, central confirmation happens later through helper sync.
 7. Receivers apply the event and cache updated chat/messages.
 
 Expected UI:
 
-- message appears immediately for sender
-- receiver sees it in realtime if connected
-- unread count increments for receivers who have not opened the chat
+```txt
+message appears immediately for sender
+receiver sees it in realtime if connected
+unread count increments for receivers who have not opened the chat
+```
 
-## Send Message While Disconnected
+## Helper sync to central
 
-1. User sends message without central/helper transport.
-2. Browser saves event in IndexedDB.
-3. Message appears locally with non-central status.
-4. If peer channel exists, browser can replicate to target chat peers.
-5. A connected peer that accepts the event can upload it through `sync:events`.
-6. Event stays retryable until central/helper confirms it.
+When the browser talks to a helper, the helper becomes the local relay and central sync client.
 
-Result:
+1. Helper stores local events in helper SQLite.
+2. Helper signs `POST /api/sync/events` with HMAC headers.
+3. Central validates the helper signature.
+4. Central accepts, duplicates or rejects events.
+5. Helper marks accepted and duplicate events as central synced.
+6. Helper applies any authoritative `serverEvents` returned by central.
+7. Helper signs `GET /api/sync/events?since=...&limit=...`.
+8. Helper applies missed central events and stores `latestSequence` as cursor.
 
-- sender can keep working
-- not connected receivers do not see it yet
-- central history updates after sender sync or connected-peer relay
+This flow works with both central implementations:
 
-## Automatic Pending Retry
+```txt
+original Node central
+Laravel central
+```
 
-1. Browser has pending, failed, helper-synced, or peer-replicated events in IndexedDB.
-2. Socket.IO connects or reconnects.
-3. App calls `retryPending()`.
-4. Events are sent in created-time order.
-5. Own events use `event:publish`; peer-replicated events use `sync:events`
-   so original authorship is preserved.
-6. Server accepts, deduplicates, or reports conflict.
-7. Browser updates local event status.
+In the Laravel path, the browser never sends Socket.IO or HMAC requests to Laravel directly. The browser talks to the Node helper; the helper talks to Laravel.
+
+## Cursor rule
+
+Central response:
+
+```txt
+latestSequence = last returned event sequence
+currentSequence = current central maximum sequence
+hasMore = latestSequence < currentSequence
+```
+
+The helper stores `latestSequence`, not `currentSequence`. This prevents skipped events when the central response is paged.
+
+## Automatic pending retry
+
+1. Browser or helper has pending, failed, helper synced or peer replicated events.
+2. Transport reconnects or helper sync loop runs.
+3. Events are sent in created time order.
+4. Central accepts, deduplicates or reports conflict.
+5. Local state is updated from the response.
 
 Retryable local statuses:
 
@@ -85,49 +93,24 @@ Finished local status:
 sent-to-central
 ```
 
-## IndexedDB Retention After Sync
-
-The browser does not wipe IndexedDB after every sync. It uses a bounded retention policy:
-
-1. Retryable events stay until central confirms them.
-2. Cached users, chats and messages stay so refresh/reopen can still work.
-3. Central-synced event records are retained for recent peer recovery and debugging.
-4. Stale central-synced events are pruned after the retention window.
-5. Peer ACKs for deleted events are pruned as orphans.
-
-Current defaults:
-
-```txt
-keep central-synced events for 24 hours
-always keep at least the newest 200 central-synced events
-```
-
-This keeps storage bounded without deleting unsynced work or breaking recent peer backfill.
-
-## Read Receipts
+## Read receipts
 
 1. User opens a chat.
 2. App finds messages not sent by current user and not read by current user.
 3. App creates `message.read` events.
-4. Events follow the same local-save and network-send path.
+4. Events follow the same local save and network send path.
 5. UI displays reader names, excluding the current user.
 
-Examples:
-
-```txt
-read by Anna
-read by Denis, Kate
-not read yet
-```
-
-## Chat List Projection
+## Chat list projection
 
 1. Server stores immutable events.
 2. Server projects current chat rows, members, messages and read rows.
-3. Browser receives `chat:list` and active messages.
+3. Browser receives chat list and active messages.
 4. Browser caches visible state in IndexedDB.
 
 Why this matters:
 
-- retry/import/peer/helper can send the same event more than once
-- event idempotency keeps projections stable
+```txt
+retry, import, peer relay and helper sync can send the same event more than once
+event idempotency keeps projections stable
+```

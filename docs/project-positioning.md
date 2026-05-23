@@ -1,77 +1,77 @@
 # Project Positioning
 
-## What This Project Demonstrates
+## What this project is
 
-- modern Vue 3 Composition API structure
-- TypeScript contracts shared across client and server
-- Express as web server and realtime gateway
-- Socket.IO room-based chat delivery
-- SQLite-backed event persistence
-- browser IndexedDB outbox for durable local intent
-- cached browser state for reopening with no server connection
-- helper-node push/pull sync for temporary field-office resilience
-- service-worker notification bridge
-- recovery dump export/import
-- practical distributed-system thinking without overclaiming production readiness
+Durable Chat Relay is a resilience prototype for chat workflows where connectivity cannot be assumed.
 
-## Repository Description
+It demonstrates:
 
-```txt
-Chat prototype for field teams with unreliable connectivity.
-Built with Vue 3, TypeScript, Express, Socket.IO, SQLite,
-IndexedDB recovery, helper-node sync, recovery dumps and peer-assisted WebRTC fallback.
-```
+- event based chat state
+- local helper sync
+- browser storage recovery
+- retry safe event ids
+- duplicate direct chat protection
+- helper to central request signing
+- peer assisted delivery between already known active peers
+- integration with an additional Laravel central server
 
-## Suggested Repository Name
+## What the Laravel project adds
+
+The Laravel repository adds a second central implementation:
 
 ```txt
-durable-chat-relay
+Laravel 12 + PostgreSQL central HTTP authority
 ```
 
-Alternative names:
+It is useful for demonstrating:
+
+- PHP 8.x OOP backend design
+- PostgreSQL event storage
+- helper contract compatibility
+- Node helper to Laravel central integration
+- signed helper sync verification
+- central idempotency and projections
+
+## What belongs here
+
+This original project owns:
 
 ```txt
-vue-durable-chat
-field-chat-resilience-lab
-vue-realtime-chat-lab
-durable-chat
+Vue client
+Socket.IO transport
+Node helper
+original Node central
+SQLite helper and central stores
+IndexedDB recovery
+WebRTC peer path
+service worker notification path
 ```
 
-## Known Limitations
+## What belongs to Laravel
 
-- demo authentication only
-- architecture can support real auth, but this implementation uses demo headers
-- SQLite is used for simplicity and local runnability
-- helper discovery is manual
-- WebRTC event replication requires peers to be signaled before the outage
-- full serverless discovery is not complete yet
-- production security, access control, and encryption would need more work
-- REST event publishing uses demo-auth headers, not production authentication
-- `POST /api/sync/events` and recovery import are demo-trusted replication paths
-
-## Why This Matters
-
-Most chat demos assume the server is available. Durable Chat Relay starts from a different assumption: field teams may still need to write messages while the central connection is unstable.
-
-The design assumes that connectivity can fail at several layers:
+The Laravel project owns:
 
 ```txt
-central server unreachable
-helper unavailable
-browser tab closed
-socket reconnects after events were created
-same event arrives more than once
-field laptop needs a manual recovery path
+central HTTP sync API
+PostgreSQL durable event log
+PHP OOP domain layer
+Laravel migrations and tests
+readiness endpoint
+recovery dry run
 ```
 
-The project responds with layered resilience:
+## Current limits
 
-```txt
-central persistence
-helper persistence
-browser IndexedDB
-idempotent event IDs
-service-worker notifications
-recovery dumps
-peer-assisted WebRTC replication
-```
+The project is not a production secure messaging platform.
+
+Remaining production gaps:
+
+- full user authentication
+- per chat authorization
+- signed browser/device events
+- message encryption
+- production key rotation
+- deployment hardening
+- observability dashboards
+- load testing
+- full automated WebRTC failure scenario coverage

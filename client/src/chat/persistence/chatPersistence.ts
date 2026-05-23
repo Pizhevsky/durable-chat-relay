@@ -2,8 +2,8 @@ import type { AppConfig } from '../../../../shared/types'
 import { api } from '../../services/api'
 import {
   cacheChats,
-  cacheMessages,
   cachedChats,
+  cacheMessages,
   cachedMessages,
   cacheUsers,
   cachedUsers

@@ -37,7 +37,13 @@ export const serverConfig = {
   helperSyncBatchSize: readNumberEnv('HELPER_SYNC_BATCH_SIZE', serverDefaults.helperSyncBatchSize),
   vapidSubject: process.env.VAPID_SUBJECT,
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
-  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+  helperSharedSecret: process.env.DCR_HELPER_SHARED_SECRET ?? 'local-dev-helper-secret',
+  trustedHelperIds: (process.env.DCR_TRUSTED_HELPER_IDS ?? 'helper-demo')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  helperSignatureToleranceSeconds: readNumberEnv('DCR_HELPER_SIGNATURE_TOLERANCE_SECONDS', 300)
 }
 
 export function publicConfig(): AppConfig {

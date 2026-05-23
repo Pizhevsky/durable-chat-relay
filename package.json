@@ -6,9 +6,9 @@
   "description": "Chat prototype for field teams with unreliable connectivity, built with Vue 3, TypeScript, Express, Socket.IO, SQLite, IndexedDB recovery, helper-node sync and peer-assisted WebRTC fallback.",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts",
-    "dev:central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts",
-    "dev:helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite NODE_ID=helper-demo CENTRAL_URL=http://localhost:3000 tsx server/index.ts",
+    "dev:server": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite DCR_TRUSTED_HELPER_IDS=helper-demo DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
+    "dev:central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite DCR_TRUSTED_HELPER_IDS=helper-demo DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
+    "dev:helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite NODE_ID=helper-demo CENTRAL_URL=http://localhost:3000 DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
     "dev:client": "parcel client/index.html --port 1234 --dist-dir dist/client --no-cache",
     "build": "npm run build:client && npm run build:server",
     "build:client": "parcel build client/index.html --dist-dir dist/client --public-url /",
@@ -17,8 +17,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite tsx server/index.ts",
-    "central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite tsx server/index.ts"
+    "reset:demo": "node scripts/reset-demo-state.mjs",
+    "helper": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
+    "helper:laravel": "NODE_ROLE=helper PORT=3001 DATABASE_PATH=./data/helper.sqlite NODE_ID=helper-demo CENTRAL_URL=http://127.0.0.1:8000 DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
+    "central": "NODE_ROLE=central NODE_ID=central-demo PORT=3000 DATABASE_PATH=./data/central.sqlite DCR_TRUSTED_HELPER_IDS=helper-demo DCR_HELPER_SHARED_SECRET=local-dev-helper-secret tsx server/index.ts",
+    "dev:laravel": "concurrently -k \"npm:helper:laravel\" \"npm:dev:client\""
   },
   "dependencies": {
     "better-sqlite3": "^11.9.0",

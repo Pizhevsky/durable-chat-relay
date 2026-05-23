@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { PeerSignalPayload, UserId } from '../../../../shared/types'
+import type { DeviceId, PeerSignalPayload, UserId } from '../../../../shared/types'
 import { clientConfig } from '../../config/clientConfig'
 import { createPeerMesh } from '../../services/realtime/peerMesh'
 import {
@@ -19,7 +19,7 @@ type PeerSignalMessage = Parameters<ReturnType<typeof createPeerMesh>['handleSig
 
 interface PeerReplicationOptions {
   state: ChatState
-  deviceId: string
+  deviceId: DeviceId
   localTransportPaused: Ref<boolean>
   sendSignal: (toUserId: UserId, signal: PeerSignalPayload) => void
   onEventAccepted: (event: AppliedChatEvent) => Promise<void>

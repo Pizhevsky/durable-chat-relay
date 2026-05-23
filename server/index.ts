@@ -10,6 +10,7 @@ import { ChatEventService } from './services/ChatEventService.js'
 import { registerRoutes } from './routes.js'
 import { registerSocketHandlers } from './socket/registerSocket.js'
 import { startHelperSync } from './sync/helperSync.js'
+import { captureRawBody } from './security/helperAuth.js'
 
 const db = createDatabase(serverConfig.databasePath)
 const service = new ChatEventService(db, serverConfig.nodeRole)
@@ -21,7 +22,7 @@ const io = new Server(httpServer, {
 })
 
 app.use(cors())
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '2mb', verify: captureRawBody }))
 
 registerRoutes(app, service)
 const socketEvents = registerSocketHandlers(io, service)

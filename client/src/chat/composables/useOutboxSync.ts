@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import type { ChatEvent, SyncResponse } from '../../../../shared/types'
+import type { ChatEvent, EventId, SyncResponse, UserId } from '../../../../shared/types'
 import {
   cleanupSyncedEvents,
   type LocalEventRecord,
@@ -27,7 +27,7 @@ export interface OutboxSync {
 }
 
 interface OutboxSyncInput {
-  getUserId: () => string
+  getUserId: () => UserId
   publishOnline: (event: ChatEvent) => Promise<ChatEvent>
   syncReplicated: (events: ChatEvent[]) => Promise<SyncResponse>
   onEventConfirmed: (
@@ -123,7 +123,7 @@ export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
         await cleanupSyncedEvents()
       }
 
-      for (const eventId of result.conflicts) {
+      for (const eventId of syncConflictEventIds(result.conflicts)) {
         await markEventFailed(eventId, 'Peer-replicated event was rejected by central sync')
       }
     } catch (error: unknown) {
@@ -150,6 +150,12 @@ export function useOutboxSync(input: OutboxSyncInput): OutboxSync {
     retryPending,
     refreshPendingCount
   }
+}
+
+function syncConflictEventIds(conflicts: SyncResponse['conflicts']): EventId[] {
+  return conflicts
+    .map((conflict) => typeof conflict === 'string' ? conflict : conflict.eventId)
+    .filter((eventId): eventId is EventId => Boolean(eventId))
 }
 
 function eventWithRemappedChat(event: ChatEvent, chatRemaps: Map<string, string>): ChatEvent {
