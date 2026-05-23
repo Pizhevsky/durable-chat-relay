@@ -5,10 +5,11 @@ import type {
   EventSyncStatus,
   UserId
 } from '../../shared/types.js'
+import { DirectPairKey } from '../../shared/domain/DirectPairKey.js'
 import type { EventRow } from './chatEventRows.js'
 
 export function canonicalDirectPairKey(memberIds: UserId[]): string {
-  return Array.from(new Set(memberIds)).sort().join(':')
+  return DirectPairKey.fromUserIds(memberIds).value
 }
 
 export function directChatTitle(members: ChatMember[], currentUserId: UserId): string {

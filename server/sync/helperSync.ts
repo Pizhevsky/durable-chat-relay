@@ -1,11 +1,12 @@
-import type { ChatEvent, EventId, SyncPullResponse, SyncResponse } from '../../shared/types.js'
+import type { ChatEvent, EventId, SyncResponse } from '../../shared/types.js'
 import { serverConfig } from '../config.js'
-import { signCentralRequest } from '../security/helperAuth.js'
 import type { ChatEventService } from '../services/ChatEventService.js'
+import { CentralSyncClient } from './CentralSyncClient.js'
 
 export function startHelperSync(service: ChatEventService, emitAppliedEvent: (event: ChatEvent) => void): () => void {
   if (serverConfig.nodeRole !== 'helper' || !serverConfig.centralUrl) return () => undefined
 
+  const centralSyncClient = new CentralSyncClient(serverConfig.centralUrl)
   const baseDelay = Math.max(serverConfig.helperSyncMinIntervalMs, serverConfig.helperSyncIntervalMs)
   const retryProbeDelay = Math.min(serverConfig.helperSyncMinIntervalMs, baseDelay)
   let nextDelay = baseDelay
@@ -17,22 +18,7 @@ export function startHelperSync(service: ChatEventService, emitAppliedEvent: (ev
     const events = service.getPendingCentralSync(serverConfig.helperSyncBatchSize)
     if (events.length === 0) return
 
-    const url = new URL(`${serverConfig.centralUrl}/api/sync/events`)
-    const body = JSON.stringify({
-      sourceNodeId: serverConfig.nodeId,
-      events
-    })
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...signCentralRequest('POST', url, body)
-      },
-      body
-    })
-
-    if (!response.ok) throw new Error(`Central push failed: ${response.status}`)
-    const result = await response.json() as SyncResponse
+    const result = await centralSyncClient.pushEvents(serverConfig.nodeId, events)
     service.markCentralSynced([...result.accepted, ...result.duplicates])
     const conflictedEventIds = permanentSyncConflictEventIds(result.conflicts)
     service.markCentralConflicted(conflictedEventIds)
@@ -47,15 +33,7 @@ export function startHelperSync(service: ChatEventService, emitAppliedEvent: (ev
   async function pullCentralEvents(): Promise<void> {
     const cursorKey = `central:${serverConfig.centralUrl}:sequence`
     const since = service.getSyncCursor(cursorKey)
-    const url = new URL(`${serverConfig.centralUrl}/api/sync/events`)
-    url.searchParams.set('since', String(since))
-    url.searchParams.set('limit', String(serverConfig.helperSyncBatchSize))
-    const response = await fetch(url.toString(), {
-      headers: signCentralRequest('GET', url)
-    })
-
-    if (!response.ok) throw new Error(`Central pull failed: ${response.status}`)
-    const result = await response.json() as SyncPullResponse
+    const result = await centralSyncClient.pullEvents(since, serverConfig.helperSyncBatchSize)
 
     if (result.events.length > 0) {
       const applied = service.applyEvents(result.events)

@@ -81,6 +81,7 @@ export function usePeerReplication({
     )
 
     return uniqueUserIds(directoryPeerIds.length > 0 ? directoryPeerIds : fallbackChatMemberIds)
+      .filter((userId) => userId !== state.currentUserId.value)
   }
 
   function syncTargets(): void {
@@ -89,6 +90,7 @@ export function usePeerReplication({
 
   function publishEvent(event: AppliedChatEvent): void {
     const targetUserIds = peerTargetUserIds(state.chats.value, state.currentUserId.value, event)
+    peerMesh.updatePeers(uniqueUserIds([...currentPeerTargetIds(), ...targetUserIds]))
     peerMesh.publishEvent(event, targetUserIds)
   }
 

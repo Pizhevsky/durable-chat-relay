@@ -1,8 +1,8 @@
 # Shared Integration Contract
 
-This document is intentionally duplicated in both repositories so the integration rules stay visible from either side.
+This document is duplicated in both repositories so the integration rules stay visible from either side.
 
-The combined system has two different projects with separate responsibilities:
+There are two separate projects:
 
 ```txt
 Original Durable Chat Relay project
@@ -12,7 +12,7 @@ Laravel central server project
   Laravel 12 HTTP central API + PostgreSQL durable event store
 ```
 
-For the Laravel integration path, the runtime shape is:
+For the Laravel integration path:
 
 ```txt
 Vue client :1234
@@ -23,62 +23,28 @@ Original Node helper :3001
    |
    | signed HTTP sync
    v
-Laravel central API :8000
+Laravel central :8000
    |
    v
 PostgreSQL
 ```
 
-Do not point the Vue client directly at Laravel. Laravel does not host the Socket.IO transport used by the existing client. The browser talks to the helper. The helper talks to Laravel.
+## Transport boundary
 
-## Run flow for Laravel central
+The Vue client does not talk directly to Laravel. It talks to the Node helper because the client uses Socket.IO and local recovery behaviour owned by the original project.
 
-Start Laravel in the Laravel repository:
+Only the helper sends signed HTTP sync requests to the central server.
 
-```bash
-composer install
-cp .env.example .env
-php artisan key:generate
-php artisan migrate:fresh --seed
-php artisan serve --host=127.0.0.1 --port=8000
+## Protected helper sync endpoints
+
+```http
+POST /api/sync/events
+GET  /api/sync/events?since=...&limit=...
 ```
 
-Start the helper and client in the original repository:
+Central implementations may also protect recovery import/export when used as helper/operator endpoints.
 
-```bash
-npm install
-npm run dev:laravel
-```
-
-Open:
-
-```txt
-http://localhost:1234?api=http://localhost:3001
-```
-
-`npm run dev:laravel` starts the Node helper on port `3001` and the Vue client on port `1234`. It does not start the old Node central server.
-
-## Run flow for the original Node central
-
-The original project can still run its own central server for comparison and original demos:
-
-```bash
-npm run dev
-```
-
-This starts:
-
-```txt
-Vue client :1234 -> Node central :3000 -> SQLite
-```
-
-Use this only when testing the original Node central path. It is not the Laravel integration path.
-
-## Helper to central authorization
-
-Helper sync requests are signed with HMAC SHA 256.
-
-Required headers:
+## Helper signature headers
 
 ```txt
 X-DCR-Helper-Id
@@ -92,21 +58,9 @@ The signature payload is:
 timestamp + "\n" + method + "\n" + path-with-query + "\n" + raw-body
 ```
 
-Examples of signed paths:
+The browser must not contain the helper secret.
 
-```txt
-POST /api/sync/events
-GET  /api/sync/events?since=0&limit=200
-```
-
-Both central implementations verify the same helper signature contract:
-
-```txt
-Laravel central verifies signed helper sync requests.
-Original Node central verifies signed helper sync requests.
-```
-
-Local demo secret used by both projects:
+Local demo values:
 
 ```env
 DCR_HELPER_SHARED_SECRET=local-dev-helper-secret
@@ -114,26 +68,23 @@ DCR_TRUSTED_HELPER_IDS=helper-demo
 DCR_HELPER_SIGNATURE_TOLERANCE_SECONDS=300
 ```
 
-This is helper to central authorization. It is not full user authentication, signed browser events, message encryption, or production key rotation.
+## Sync request and response shapes
 
-## Sync endpoints
-
-The helper pushes pending events:
+Push request:
 
 ```http
 POST /api/sync/events
 ```
 
-Request shape:
-
 ```json
 {
   "sourceNodeId": "helper-demo",
+  "sourceDeviceId": "browser-device-id",
   "events": []
 }
 ```
 
-Response shape:
+Push response:
 
 ```json
 {
@@ -147,13 +98,13 @@ Response shape:
 }
 ```
 
-The helper pulls missed central events:
+Pull request:
 
 ```http
 GET /api/sync/events?since=0&limit=200
 ```
 
-Response shape:
+Pull response:
 
 ```json
 {
@@ -167,11 +118,25 @@ Response shape:
 }
 ```
 
-`latestSequence` is the last sequence returned in the current response. It must not jump to the database maximum when the response is paged. This prevents helpers from skipping missed central events.
+## Sync response expectations
+
+A central sync response should identify accepted events, duplicates, conflicts and any authoritative server events needed for reconciliation.
+
+The helper uses these fields to:
+
+```txt
+mark local events as central-synced
+avoid retrying permanent conflicts
+apply central events missed during outage
+remap duplicate direct chat ids to the authoritative central chat id
+advance the pull cursor only to the last returned sequence
+```
+
+`latestSequence` is the last sequence returned in the current response. It must not jump to the database maximum when the response is paged, otherwise helpers can skip missed central events.
 
 ## Event shape
 
-Both projects use the same event shape:
+Both central implementations accept the same event envelope:
 
 ```json
 {
@@ -198,57 +163,10 @@ message.created
 message.read
 ```
 
-Supported sync status values:
+## Direct chat reconciliation
 
-```txt
-local
-peer-replicated
-helper-synced
-central-synced
-conflict
-```
+Direct chat identity is based on a canonical pair key. If two helpers create the same direct chat offline, the central server keeps one authoritative chat and returns enough information for the losing helper to remap its local chat id.
 
-## Multi helper direct chat reconciliation
+## Central implementations
 
-The central server is authoritative for direct chat identity.
-
-Scenario:
-
-```txt
-Helper A creates direct chat chat-a for Denis and Anna while offline.
-Helper B creates direct chat chat-b for Denis and Anna while offline.
-Helper A syncs first.
-Helper B syncs later.
-```
-
-Expected result:
-
-```txt
-Central keeps one canonical direct chat.
-The later helper receives the accepted central chat event.
-The helper remaps its local duplicate chat id to the central chat id.
-Pending local messages for the losing chat id are rewritten before retry.
-The browser state also reconciles to the central chat id.
-```
-
-This rule applies when the central server is Laravel and when the central server is the original Node central.
-
-## Clean demo reset
-
-When switching between central implementations or repeating conflict demos, reset all participating stores:
-
-```txt
-Laravel PostgreSQL database, if using Laravel central
-original central SQLite database, if using original central
-helper SQLite database
-browser localStorage
-browser sessionStorage
-browser IndexedDB
-```
-
-Mixed old state can make direct chat reconciliation and cursor demos look wrong because each layer may remember a different event sequence.
-
-
-## SHA-256 recovery checksum
-
-Recovery exports include a SHA-256 checksum calculated from the canonical events payload. Recovery import verifies this checksum before accepting or previewing events, so truncated or manually corrupted dumps are rejected instead of being applied silently.
+The original Node central and the Laravel central should follow the same helper sync contract. They differ in implementation and storage, not in the helper-facing contract.

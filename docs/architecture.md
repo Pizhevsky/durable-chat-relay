@@ -1,14 +1,12 @@
 # Architecture
 
-## Summary
+Durable Chat Relay separates local availability from central authority.
 
-Durable Chat Relay is a central first chat system with optional helper nodes and browser side durability.
+The original project owns the browser-facing runtime: Vue client, Socket.IO, Node central mode, Node helper mode, IndexedDB recovery and WebRTC peer fallback. The Laravel project is an optional second central implementation for the helper sync path.
 
-The original project provides the browser, helper and original Node central implementation. The Laravel central server is a separate project that can replace the original Node central in the helper sync path.
+## Runtime paths
 
-## Two supported central paths
-
-### Original Node central path
+### Original direct mode
 
 ```txt
 Vue client :1234
@@ -21,18 +19,37 @@ Node central :3000
 SQLite central event store
 ```
 
-Use:
+Use this for the normal standalone demo:
 
 ```bash
 npm run dev
 ```
 
-### Laravel central integration path
+### Helper with original Node central
 
 ```txt
 Vue client :1234
    |
-   | Socket.IO and helper API
+   | Socket.IO
+   v
+Node helper :3001
+   |
+   | signed HTTP sync
+   v
+Node central :3000
+   |
+   v
+SQLite central event store
+```
+
+Use this to show helper sync and central outage recovery while staying fully inside the original project.
+
+### Helper with Laravel central
+
+```txt
+Vue client :1234
+   |
+   | Socket.IO
    v
 Node helper :3001
    |
@@ -41,126 +58,33 @@ Node helper :3001
 Laravel central :8000
    |
    v
-PostgreSQL
+PostgreSQL event store
 ```
 
-Use:
-
-```bash
-npm run dev:laravel
-```
-
-## Runtime modes
-
-### Central mode
-
-The Node process runs as the original central server.
-
-```txt
-NODE_ROLE=central
-```
-
-It accepts browser Socket.IO events and signed helper sync events.
-
-### Helper mode
-
-The Node process runs as the local helper.
-
-```txt
-NODE_ROLE=helper
-```
-
-The helper accepts browser Socket.IO connections, stores events in helper SQLite, pushes pending events to central, and pulls missed central events by cursor.
-
-### Browser local mode
-
-The browser stores user actions in IndexedDB when no transport path is available.
-
-```txt
-Browser -> IndexedDB outbox + cached users/chats/messages
-```
-
-### Peer assisted mode
-
-Known browsers can replicate events over WebRTC data channels after Socket.IO signalling has established the peer link.
-
-```txt
-Browser <-> Browser
-Each browser stores event log in IndexedDB
-```
-
-WebRTC does not replace the central server. It only helps active known peers exchange events during temporary connectivity gaps.
-
-## Helper to central sync
-
-The helper sync loop has two parts:
-
-```txt
-push pending local/helper events to central
-pull missed central events since stored sequence cursor
-```
-
-Both push and pull requests are HMAC signed.
-
-```txt
-X-DCR-Helper-Id
-X-DCR-Timestamp
-X-DCR-Signature
-```
-
-The original Node central and Laravel central verify the same signature contract.
-
-## Cursor rule
-
-The helper stores the `latestSequence` returned by central.
-
-Central must return:
-
-```txt
-latestSequence = sequence of the last event included in this response
-currentSequence = current central maximum sequence
-hasMore = latestSequence < currentSequence
-```
-
-This prevents a helper from skipping events when there are more central events than one response limit.
-
-## Direct chat reconciliation
-
-Direct chats use a canonical pair key based on sorted participant ids.
-
-```txt
-u-anna:u-denis
-```
-
-If several helpers create the same direct chat while offline, the central server is authoritative. The later helper receives the canonical central `chat.created` event and remaps its local duplicate chat id to the central one.
-
-Expected result:
-
-```txt
-one central direct chat
-helper SQLite remapped to central chat id
-pending helper messages rewritten to central chat id
-browser IndexedDB and UI reconciled to central chat id
-```
-
-This behaviour is expected with both central implementations.
+Use this to show the additional PHP/PostgreSQL central authority.
 
 ## Responsibility split
 
-| Concern | Original project | Laravel central project |
-|---|---|---|
-| Vue UI | yes | no |
-| Socket.IO client transport | yes | no |
-| Node helper mode | yes | no |
-| Browser IndexedDB recovery | yes | no |
-| WebRTC peer fallback | yes | no |
-| Original Node central | yes | no |
-| Laravel central HTTP API | no | yes |
-| PostgreSQL central event store | no | yes |
-| PHP 8.x OOP domain layer | no | yes |
+| Concern | Owner |
+|---|---|
+| Browser UI and demo user switching | Original Vue client |
+| Socket.IO transport | Original Node central/helper |
+| Browser outbox and cache | IndexedDB in the original client |
+| Helper local queue | Node helper SQLite |
+| Peer assisted fallback | Original client and Node signalling |
+| Original central demo | Node central + SQLite |
+| Additional central authority | Laravel + PostgreSQL |
+| Helper-to-central trust | HMAC signed sync requests |
 
-## Security boundary
+## Failure model
 
-The project now signs helper sync requests to central. That protects helper to central sync traffic in the demo integration.
+The project focuses on these cases:
 
-The project still uses demo user switching for browser sessions. A production system would need real authentication, per action authorization, signed device events, message encryption, key rotation, rate limiting and observability.
+```txt
+central available -> normal realtime delivery
+central unavailable but helper available -> helper stores and retries
+no central/helper -> browser stores in IndexedDB and may use existing WebRTC peers
+central returns -> signed sync, deduplication and projection rebuild official state
+```
+
+The central server, whether Node or Laravel, deduplicates by `eventId`. The helper owns retry and backoff. The browser owns local recovery before delivery.
